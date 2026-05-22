@@ -20,6 +20,12 @@
 - Android、Web、鸿蒙、Windows 多端接入
 - AI 附加功能：文本整理、OCR、敏感信息提醒、智能标签、语义搜索
 
+## 当前技术选型
+
+- 后端：`Go + PostgreSQL`，采用模块化单体 + 分层架构，适合认证、同步、推送、文件传输这类并发网络服务。
+- Android：`Kotlin + Jetpack Compose`，采用 `Single-Activity + Navigation + MVVM + Repository`，更适合状态驱动界面；同步核心放在 `Foreground Service` 中。
+- 详细说明见 [docs/architecture.md](docs/architecture.md)。
+
 ## 当前目录规划
 
 ```text
@@ -48,9 +54,3 @@ ClipBridge/
 - 新项目应使用独立域名、独立目录、独立 nginx 配置、独立 systemd 服务
 - 为了尽量降低对旧系统的影响，当前文档建议新网页端地址使用：
   - `https://clipbridge-us2.xushuangbo.top:18444`
-
-## 当前状态
-
-- 已完成项目说明文档初始化
-- 已建立顶层模块目录
-- 下一步按 `docs/roadmap.md` 进入正式开发
