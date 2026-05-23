@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,10 +10,10 @@ import (
 	"clipbridge/backend/internal/httpapi/response"
 )
 
-func Auth(tokenManager *auth.Manager) Middleware {
+func Auth(authService *auth.Service) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if tokenManager == nil {
+			if authService == nil {
 				response.Error(w, r, http.StatusInternalServerError, "auth service is not ready")
 				return
 			}
@@ -24,23 +25,22 @@ func Auth(tokenManager *auth.Manager) Middleware {
 				return
 			}
 
-			claims, err := tokenManager.ParseAccessToken(token)
+			user, device, err := authService.AuthenticateAccessToken(r.Context(), token)
 			if err != nil {
-				response.Error(w, r, http.StatusUnauthorized, "invalid access token")
+				if errors.Is(err, auth.ErrUnauthorized) {
+					response.Error(w, r, http.StatusUnauthorized, "invalid access token")
+					return
+				}
+				response.Error(w, r, http.StatusInternalServerError, "auth validation failed")
 				return
 			}
 
 			identity := authcontext.Identity{
-				UserID:   claims.UserID,
-				DeviceID: claims.DeviceID,
+				UserID:   user.ID,
+				DeviceID: device.ID,
 			}
 			r = r.WithContext(authcontext.WithIdentity(r.Context(), identity))
 
-			// 当前阶段只先做 token 解析和身份注入。
-			// 下一阶段接入真实登录后，会在这里继续补：
-			// 1. 用户是否存在；
-			// 2. 设备是否存在；
-			// 3. 设备是否已被吊销。
 			next.ServeHTTP(w, r)
 		})
 	}

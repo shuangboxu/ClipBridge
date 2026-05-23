@@ -46,6 +46,8 @@ ClipBridge/
 - [docs/architecture.md](docs/architecture.md)：系统架构、模块拆分、部署约束
 - [docs/api.md](docs/api.md)：接口设计说明、接口分组、请求与响应约定
 - [docs/roadmap.md](docs/roadmap.md)：开发顺序、阶段计划、验收节点
+- [docs/ui-plan.md](docs/ui-plan.md)：Android 和 Web 的页面布局、跳转规则、统一交互语义
+- [web/README.md](web/README.md)：第 2 步最小 Web 端的本地运行方式与页面说明
 
 ## 部署约束
 

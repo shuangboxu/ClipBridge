@@ -20,6 +20,7 @@ type App struct {
 	Config       config.Config
 	DB           *pgxpool.Pool
 	TokenManager *auth.Manager
+	AuthService  *auth.Service
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {
@@ -39,10 +40,14 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, fmt.Errorf("run migrations failed: %w", err)
 	}
 
+	tokenManager := auth.NewManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL)
+	authRepo := auth.NewPostgresRepository(pool)
+
 	return &App{
 		Config:       cfg,
 		DB:           pool,
-		TokenManager: auth.NewManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL),
+		TokenManager: tokenManager,
+		AuthService:  auth.NewService(authRepo, tokenManager, cfg.Auth.RefreshTokenTTL),
 	}, nil
 }
 

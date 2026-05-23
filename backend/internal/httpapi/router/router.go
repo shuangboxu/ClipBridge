@@ -12,14 +12,30 @@ import (
 func New(application *app.App) http.Handler {
 	healthHandler := handlers.NewHealthHandler(application)
 	systemHandler := handlers.NewSystemHandler()
+	authHandler := handlers.NewAuthHandler(application)
+	accountHandler := handlers.NewAccountHandler(application)
+	deviceHandler := handlers.NewDeviceHandler(application)
 
 	router := newSimpleRouter()
 	router.Handle(http.MethodGet, "/healthz", http.HandlerFunc(healthHandler.Get))
 
-	// 这个示例接口的存在意义是：
-	// 让第一阶段就能验证“鉴权中间件是否真的起作用了”。
-	protectedProfile := middleware.Auth(application.TokenManager)(http.HandlerFunc(systemHandler.GetProfile))
+	router.Handle(http.MethodPost, "/v1/auth/register", http.HandlerFunc(authHandler.Register))
+	router.Handle(http.MethodPost, "/v1/auth/login", http.HandlerFunc(authHandler.Login))
+	router.Handle(http.MethodPost, "/v1/auth/refresh", http.HandlerFunc(authHandler.Refresh))
+
+	protectedProfile := middleware.Auth(application.AuthService)(http.HandlerFunc(systemHandler.GetProfile))
+	protectedLogout := middleware.Auth(application.AuthService)(http.HandlerFunc(authHandler.Logout))
+	protectedMe := middleware.Auth(application.AuthService)(http.HandlerFunc(accountHandler.GetMe))
+	protectedDevices := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.List))
+	protectedUpdateDevice := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.Update))
+	protectedForceOfflineDevice := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.ForceOffline))
+
 	router.Handle(http.MethodGet, "/v1/system/profile", protectedProfile)
+	router.Handle(http.MethodPost, "/v1/auth/logout", protectedLogout)
+	router.Handle(http.MethodGet, "/v1/account/me", protectedMe)
+	router.Handle(http.MethodGet, "/v1/devices", protectedDevices)
+	router.Handle(http.MethodPatch, "/v1/devices", protectedUpdateDevice)
+	router.Handle(http.MethodPost, "/v1/devices/offline", protectedForceOfflineDevice)
 
 	// 中间件顺序很重要：
 	// 1. 先生成 request_id，确保后面的日志和响应都能带上它；
@@ -28,10 +44,10 @@ func New(application *app.App) http.Handler {
 	// 4. 最后处理跨域。
 	return middleware.Chain(
 		router,
-		middleware.CORS(application.Config.CORS.AllowOrigins),
-		middleware.Recovery(),
-		middleware.AccessLog(),
 		middleware.RequestID(),
+		middleware.AccessLog(),
+		middleware.Recovery(),
+		middleware.CORS(application.Config.CORS.AllowOrigins),
 	)
 }
 

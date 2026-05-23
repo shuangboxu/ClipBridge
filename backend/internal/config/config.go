@@ -35,8 +35,9 @@ type DatabaseConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret      string
-	AccessTokenTTL time.Duration
+	JWTSecret       string
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
 }
 
 type CORSConfig struct {
@@ -69,8 +70,9 @@ func Load() (Config, error) {
 			PingTimeout:       time.Duration(getEnvInt("DB_PING_TIMEOUT_SECONDS", 3)) * time.Second,
 		},
 		Auth: AuthConfig{
-			JWTSecret:      getEnv("JWT_SECRET", "please-change-this-secret"),
-			AccessTokenTTL: time.Duration(getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 120)) * time.Minute,
+			JWTSecret:       getEnv("JWT_SECRET", "please-change-this-secret"),
+			AccessTokenTTL:  time.Duration(getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 120)) * time.Minute,
+			RefreshTokenTTL: time.Duration(getEnvInt("REFRESH_TOKEN_TTL_HOURS", 24*30)) * time.Hour,
 		},
 		CORS: CORSConfig{
 			AllowOrigins: splitCSV(getEnv("CORS_ALLOW_ORIGINS", "*")),
@@ -133,6 +135,9 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.AccessTokenTTL <= 0 {
 		return errors.New("ACCESS_TOKEN_TTL_MINUTES must be greater than 0")
+	}
+	if c.Auth.RefreshTokenTTL <= 0 {
+		return errors.New("REFRESH_TOKEN_TTL_HOURS must be greater than 0")
 	}
 	return nil
 }

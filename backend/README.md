@@ -1,6 +1,6 @@
 # ClipBridge Backend
 
-这是 ClipBridge 第一阶段的后端基础骨架。
+这是 ClipBridge 第一阶段的后端服务。
 
 当前已经完成的范围：
 
@@ -12,8 +12,16 @@
 - 统一 JSON 响应格式
 - 请求 ID 中间件
 - 统一恢复中间件
-- 统一鉴权中间件骨架
-- 一个受保护的示例接口
+- 真实鉴权中间件
+- 用户注册
+- 用户登录
+- Refresh Token 刷新
+- 退出登录
+- 登录时自动登记设备
+- 当前账号信息接口
+- 设备列表接口
+- 修改设备名接口
+- 强制下线设备接口
 
 ## 目录说明
 
@@ -24,9 +32,10 @@ backend/
 │  └─ dev-token/    开发期生成测试 token 的小工具
 ├─ internal/
 │  ├─ app/          应用装配层，负责把配置、数据库、鉴权拼起来
-│  ├─ auth/         Access Token 生成与解析
+│  ├─ auth/         账号认证、密码处理、Token 与认证业务层
 │  ├─ config/       环境变量和 .env 加载
 │  ├─ database/     PostgreSQL 连接与迁移
+│  ├─ id/           UUID 生成等基础 ID 工具
 │  └─ httpapi/      路由、处理中间件、响应格式、处理器
 └─ .env.example
 ```
@@ -51,6 +60,7 @@ cp .env.example .env
 
 - `DATABASE_URL`
 - `JWT_SECRET`
+- `REFRESH_TOKEN_TTL_HOURS`
 
 ## 启动服务
 
@@ -84,19 +94,59 @@ GET /healthz
 
 这个接口会顺手检查数据库是否可连通。
 
-### 2. 受保护示例接口
+### 2. 认证接口
+
+```http
+POST /v1/auth/register
+POST /v1/auth/login
+POST /v1/auth/refresh
+POST /v1/auth/logout
+```
+
+说明：
+
+- 注册和登录成功后都会自动登记当前设备
+- `refresh` 会返回新的 access token 和新的 refresh token
+- `logout` 需要携带 access token，body 里的 `refresh_token` 可选
+
+### 3. 当前账号信息
+
+```http
+GET /v1/account/me
+Authorization: Bearer <access_token>
+```
+
+### 4. 设备列表
+
+```http
+GET /v1/devices
+Authorization: Bearer <access_token>
+```
+
+### 5. 设备管理接口
+
+```http
+PATCH /v1/devices
+POST /v1/devices/offline
+```
+
+说明：
+
+- `PATCH /v1/devices` 用于修改设备名
+- `POST /v1/devices/offline` 用于强制下线指定设备，并撤销该设备名下的 refresh token
+
+### 6. 受保护示例接口
 
 ```http
 GET /v1/system/profile
-Authorization: Bearer <token>
+Authorization: Bearer <access_token>
 ```
 
-这个接口只是为了验证第一阶段的“鉴权中间件骨架”已经生效。
-后续做真正的注册、登录、设备校验时，会在这个骨架上继续扩展。
+这个接口会继续保留，方便开发时快速确认 access token 和鉴权中间件是否正常工作。
 
 ## 生成测试 Token
 
-当前还没做注册/登录接口，所以提供了一个开发期命令来生成测试 token：
+当前仍然保留开发期命令来生成测试 token：
 
 ```powershell
 Set-Location D:\MyProject\ClipBridge\backend
@@ -109,6 +159,11 @@ go run ./cmd/dev-token
 go run ./cmd/dev-token -user-id "11111111-1111-1111-1111-111111111111" -device-id "22222222-2222-2222-2222-222222222222"
 ```
 
+注意：
+
+- 现在鉴权中间件已经会去数据库校验用户和设备是否存在
+- 所以这个命令生成的 token，只有在对应 `user_id` 和 `device_id` 真实存在时，才能访问受保护接口
+
 拿到 token 后，就可以访问受保护接口：
 
 ```bash
@@ -117,11 +172,11 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:18080/v1/system/profile
 
 ## 当前阶段的限制
 
-- 还没有注册、登录、刷新令牌、退出登录
-- 鉴权中间件当前只做 token 解析和基本声明校验
-- 还没有接入“用户是否存在、设备是否已吊销”这类数据库校验
+- 还没有修改密码接口
+- 还没有文本同步、历史记录、ACK、补拉接口
+- 还没有 WebSocket 实时同步
 
-这些正好会在你路线图的下一步“认证与设备基础”里继续完成。
+这些会在路线图后续步骤继续补上。
 
 ## 依赖说明
 
