@@ -166,7 +166,7 @@ func (r *PostgresRepository) ListDevices(ctx context.Context, userID string) ([]
 	rows, err := r.db.Query(ctx, `
 		SELECT id, user_id, platform, device_name, last_seen_at, is_active, created_at
 		FROM devices
-		WHERE user_id = $1
+		WHERE user_id = $1 AND is_active = true
 		ORDER BY last_seen_at DESC, created_at DESC
 	`, userID)
 	if err != nil {
@@ -222,10 +222,10 @@ func (r *PostgresRepository) UpdateDeviceName(ctx context.Context, userID, devic
 	return device, nil
 }
 
-func (r *PostgresRepository) DeactivateDevice(ctx context.Context, userID, deviceID string) (Device, error) {
+func (r *PostgresRepository) DeleteDevice(ctx context.Context, userID, deviceID string) (Device, error) {
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return Device{}, fmt.Errorf("begin device deactivation failed: %w", err)
+		return Device{}, fmt.Errorf("begin device delete failed: %w", err)
 	}
 	defer func() {
 		_ = tx.Rollback(ctx)
@@ -233,8 +233,7 @@ func (r *PostgresRepository) DeactivateDevice(ctx context.Context, userID, devic
 
 	var device Device
 	err = tx.QueryRow(ctx, `
-		UPDATE devices
-		SET is_active = false
+		DELETE FROM devices
 		WHERE user_id = $1 AND id = $2
 		RETURNING id, user_id, platform, device_name, last_seen_at, is_active, created_at
 	`, userID, deviceID).Scan(
@@ -250,20 +249,15 @@ func (r *PostgresRepository) DeactivateDevice(ctx context.Context, userID, devic
 		return Device{}, ErrNotFound
 	}
 	if err != nil {
-		return Device{}, fmt.Errorf("deactivate device failed: %w", err)
-	}
-
-	if _, err := tx.Exec(ctx, `
-		UPDATE auth_refresh_tokens
-		SET revoked_at = now()
-		WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL
-	`, userID, deviceID); err != nil {
-		return Device{}, fmt.Errorf("revoke refresh tokens for deactivated device failed: %w", err)
+		return Device{}, fmt.Errorf("delete device failed: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return Device{}, fmt.Errorf("commit device deactivation failed: %w", err)
+		return Device{}, fmt.Errorf("commit device delete failed: %w", err)
 	}
+
+	// 返回值代表“被移除的那台设备”的快照，对客户端继续按离线状态展示更直观。
+	device.IsActive = false
 	return device, nil
 }
 

@@ -94,29 +94,18 @@ a {
 
 .auth-card {
     display: grid;
-    gap: 20px;
+    gap: 18px;
 }
 
 .auth-card-intro {
     display: grid;
-    gap: 10px;
+    gap: 8px;
 }
 
 .auth-card-intro h1 {
     margin: 0;
     font-size: 36px;
     line-height: 1.1;
-}
-
-.auth-card-illustration {
-    padding: 18px;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(180deg, rgba(23, 104, 172, 0.08), rgba(15, 163, 127, 0.08));
-}
-
-.auth-card-illustration img {
-    display: block;
-    width: 100%;
 }
 
 .brand-title-dark {
@@ -427,16 +416,29 @@ a {
     color: #8e1d1d;
 }
 
-.message-success {
-    background: rgba(15, 163, 127, 0.1);
-    border: 1px solid rgba(15, 163, 127, 0.16);
-    color: #0f5a46;
+.toast-stack {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    z-index: 42;
+    display: grid;
+    gap: 12px;
+    pointer-events: none;
 }
 
-.message-info {
-    background: rgba(23, 104, 172, 0.08);
-    border: 1px solid rgba(23, 104, 172, 0.14);
-    color: var(--primary-strong);
+.toast {
+    min-width: 220px;
+    max-width: min(420px, calc(100vw - 36px));
+    padding: 12px 16px;
+    border-radius: 14px;
+    box-shadow: 0 18px 34px rgba(15, 31, 51, 0.16);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.toast-success {
+    background: rgba(15, 163, 127, 0.96);
+    color: #ffffff;
 }
 
 .app-frame {
@@ -1122,16 +1124,6 @@ a {
     flex-wrap: wrap;
 }
 
-.device-panel-note {
-    margin: -4px 0 0;
-    padding: 12px 14px;
-    border-radius: 14px;
-    background: rgba(217, 119, 6, 0.08);
-    color: #8b4d08;
-    font-size: 14px;
-    line-height: 1.6;
-}
-
 .muted {
     color: var(--muted);
 }
@@ -1217,6 +1209,16 @@ a {
 @media (max-width: 760px) {
     body::before {
         display: none;
+    }
+
+    .toast-stack {
+        top: 12px;
+        right: 12px;
+        left: 12px;
+    }
+
+    .toast {
+        max-width: 100%;
     }
 
     .auth-stage {

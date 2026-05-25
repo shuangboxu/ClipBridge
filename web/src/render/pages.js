@@ -300,10 +300,6 @@ function renderDeviceDetailPanel(device) {
 }
 
 function renderDeviceEditPanel(device, panelState) {
-    const feedback = panelState.feedback
-        ? `<p class="device-panel-note">${escapeHTML(panelState.feedback)}</p>`
-        : "";
-
     return `
         <div class="device-panel-backdrop" data-action="close-device-panel"></div>
         <aside class="device-panel">
@@ -346,8 +342,6 @@ function renderDeviceEditPanel(device, panelState) {
                     </button>
                 </div>
             </form>
-
-            ${feedback}
 
             <div class="data-list">
                 ${renderDataRow("设备 ID", device.id, true)}

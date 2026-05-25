@@ -26,19 +26,23 @@ export function renderLoadingState() {
     `;
 }
 
-export function renderMessage(message, errorMessage) {
+export function renderErrorMessage(errorMessage) {
     if (errorMessage) {
         return `<div class="message message-error">${escapeHTML(errorMessage)}</div>`;
     }
-    if (message) {
-        return `
-            <div class="message message-success">
-                ${escapeHTML(message)}
-                <button type="button" class="button-ghost" data-action="dismiss-message">关闭</button>
-            </div>
-        `;
-    }
     return "";
+}
+
+export function renderToast(message) {
+    if (!message) {
+        return "";
+    }
+
+    return `
+        <div class="toast-stack" aria-live="polite" aria-atomic="true">
+            <div class="toast toast-success">${escapeHTML(message)}</div>
+        </div>
+    `;
 }
 
 export function renderModuleTile(item) {

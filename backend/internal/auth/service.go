@@ -225,8 +225,9 @@ func (s *Service) ForceDeviceOffline(ctx context.Context, userID, currentDeviceI
 		return Device{}, err
 	}
 
-	// 强制下线不仅要把设备标成 inactive，还要顺手废掉它名下的 refresh token。
-	return s.repo.DeactivateDevice(ctx, userID, targetDeviceID)
+	// 这里直接删除设备记录，而不是只做软下线。
+	// 这样设备列表不会再保留这条记录，后续 refresh token 也会一起失效。
+	return s.repo.DeleteDevice(ctx, userID, targetDeviceID)
 }
 
 func (s *Service) createSession(ctx context.Context, user User, platform, deviceName string) (Session, error) {

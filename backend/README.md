@@ -105,6 +105,7 @@ POST /v1/auth/logout
 
 说明：
 
+- 当前默认关闭公开注册，只有把 `AUTH_ALLOW_REGISTRATION=true` 写进环境变量后才会放开
 - 注册和登录成功后都会自动登记当前设备
 - `refresh` 会返回新的 access token 和新的 refresh token
 - `logout` 需要携带 access token，body 里的 `refresh_token` 可选
@@ -133,7 +134,7 @@ POST /v1/devices/offline
 说明：
 
 - `PATCH /v1/devices` 用于修改设备名
-- `POST /v1/devices/offline` 用于强制下线指定设备，并撤销该设备名下的 refresh token
+- `POST /v1/devices/offline` 用于强制下线指定设备，并直接删除这条设备记录
 
 ### 6. 受保护示例接口
 

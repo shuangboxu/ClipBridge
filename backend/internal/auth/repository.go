@@ -14,7 +14,7 @@ type Repository interface {
 	TouchDeviceLastSeen(ctx context.Context, userID, deviceID string) error
 	ListDevices(ctx context.Context, userID string) ([]Device, error)
 	UpdateDeviceName(ctx context.Context, userID, deviceID, deviceName string) (Device, error)
-	DeactivateDevice(ctx context.Context, userID, deviceID string) (Device, error)
+	DeleteDevice(ctx context.Context, userID, deviceID string) (Device, error)
 	CreateRefreshToken(ctx context.Context, userID, deviceID, tokenHash string, expiresAt time.Time) (RefreshTokenRecord, error)
 	FindActiveRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshTokenRecord, error)
 	RotateRefreshToken(ctx context.Context, oldTokenHash, userID, deviceID, newTokenHash string, expiresAt time.Time) (RefreshTokenRecord, error)

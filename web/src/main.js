@@ -17,6 +17,9 @@ import { createDefaultDeviceName, isMobileViewport } from "./utils/browser.js";
 import { toUserMessage } from "./utils/format.js";
 
 const appRoot = document.getElementById("app");
+// 成功类提示统一走短时 toast，避免页面里同时出现多套反馈。
+let toastTimerID = 0;
+let preservePageErrorOnNextRouteChange = false;
 
 export function bootstrap() {
     registerEventListeners();
@@ -77,12 +80,6 @@ function registerEventListeners() {
         }
 
         switch (action) {
-            case "switch-auth-mode":
-                state.authMode = target.getAttribute("data-mode") || "login";
-                state.pageError = null;
-                state.pageMessage = null;
-                render();
-                break;
             case "navigate":
                 // 手机端点完菜单项后，立即把抽屉收起来，避免内容区被遮住。
                 if (isMobileViewport()) {
@@ -122,10 +119,6 @@ function registerEventListeners() {
             case "logout":
                 void handleLogout();
                 break;
-            case "dismiss-message":
-                state.pageMessage = null;
-                render();
-                break;
             default:
                 break;
         }
@@ -134,7 +127,11 @@ function registerEventListeners() {
 
 async function handleRouteChange() {
     state.route = normalizeRoute(window.location.hash);
-    state.pageError = null;
+    if (preservePageErrorOnNextRouteChange) {
+        preservePageErrorOnNextRouteChange = false;
+    } else {
+        state.pageError = null;
+    }
     if (state.route !== "devices") {
         closeDevicePanel();
     }
@@ -181,12 +178,11 @@ async function handleAuthSubmit(form) {
 
     setPending("auth");
     state.pageError = null;
-    state.pageMessage = null;
+    clearToast();
     render();
 
     try {
-        const path = state.authMode === "register" ? "/v1/auth/register" : "/v1/auth/login";
-        const data = await request(path, {
+        const data = await request("/v1/auth/login", {
             method: "POST",
             body: {
                 username,
@@ -207,7 +203,6 @@ async function handleAuthSubmit(form) {
             user: data.user,
             current_device_id: data.device?.id || ""
         };
-        state.pageMessage = state.authMode === "register" ? "注册成功" : "登录成功";
         navigate(DEFAULT_ROUTE);
     } catch (error) {
         state.pageError = toUserMessage(error);
@@ -224,7 +219,7 @@ async function handleLogout() {
 
     setPending("logout");
     state.pageError = null;
-    state.pageMessage = null;
+    clearToast();
     render();
 
     try {
@@ -244,7 +239,7 @@ async function handleLogout() {
         state.profile = null;
         state.devices = [];
         clearPending();
-        state.pageMessage = "已退出登录";
+        showToast("已退出登录");
         navigate(AUTH_ROUTE);
     }
 }
@@ -280,7 +275,7 @@ async function ensureAuthenticated(options = {}) {
         state.pageError = "登录已失效，请重新登录。";
         state.isBootstrapping = false;
         render();
-        navigate(AUTH_ROUTE);
+        navigate(AUTH_ROUTE, { preserveError: true });
         return false;
     }
 }
@@ -299,9 +294,6 @@ async function loadDevices(options = {}) {
     try {
         const data = await request("/v1/devices");
         state.devices = Array.isArray(data.devices) ? data.devices : [];
-        if (!options.silent) {
-            state.pageMessage = `已刷新 ${state.devices.length} 台设备`;
-        }
     } catch (error) {
         state.pageError = toUserMessage(error);
     } finally {
@@ -335,9 +327,9 @@ async function handleDeviceEditSubmit(form) {
     }
 
     state.devicePanel.draftName = deviceName;
-    state.devicePanel.feedback = "";
     setPending("device-rename");
     state.pageError = null;
+    clearToast();
     render();
 
     try {
@@ -357,11 +349,9 @@ async function handleDeviceEditSubmit(form) {
         }
 
         await loadDevices({ silent: true });
-        state.devicePanel.feedback = "设备名称已更新。";
-        state.pageMessage = "设备名称已更新";
+        showToast("设备名称已更新");
     } catch (error) {
         state.pageError = toUserMessage(error);
-        state.devicePanel.feedback = state.pageError;
     } finally {
         clearPending();
         render();
@@ -382,7 +372,7 @@ async function handleForceDeviceOffline(deviceID) {
 
     setPending("device-offline");
     state.pageError = null;
-    state.devicePanel.feedback = "";
+    clearToast();
     render();
 
     try {
@@ -400,23 +390,53 @@ async function handleForceDeviceOffline(deviceID) {
             state.devices = [];
             closeDevicePanel();
             clearPending();
-            state.pageMessage = "当前设备已被强制下线，请重新登录。";
+            showToast("当前设备已被强制下线，请重新登录。");
             navigate(AUTH_ROUTE);
             return;
         }
 
         await loadDevices({ silent: true });
         closeDevicePanel();
-        state.pageMessage = "设备已强制下线";
+        showToast("设备已强制下线");
     } catch (error) {
         state.pageError = toUserMessage(error);
-        state.devicePanel.feedback = state.pageError;
     } finally {
         if (isPending("device-offline")) {
             clearPending();
         }
         render();
     }
+}
+
+function showToast(message) {
+    state.pageMessage = message;
+    scheduleToastDismiss();
+}
+
+function clearToast() {
+    if (toastTimerID) {
+        window.clearTimeout(toastTimerID);
+        toastTimerID = 0;
+    }
+    state.pageMessage = null;
+}
+
+function scheduleToastDismiss() {
+    if (toastTimerID) {
+        window.clearTimeout(toastTimerID);
+    }
+
+    if (!state.pageMessage) {
+        toastTimerID = 0;
+        return;
+    }
+
+    // 成功类提醒保持短暂可见，避免影响主流程。
+    toastTimerID = window.setTimeout(() => {
+        state.pageMessage = null;
+        toastTimerID = 0;
+        render();
+    }, 3200);
 }
 
 function normalizeRoute(hashValue) {
@@ -431,9 +451,10 @@ function normalizeRoute(hashValue) {
     return state.session ? DEFAULT_ROUTE : AUTH_ROUTE;
 }
 
-function navigate(route) {
+function navigate(route, options = {}) {
     const nextRoute = route || AUTH_ROUTE;
     const nextHash = `#/${nextRoute}`;
+    preservePageErrorOnNextRouteChange = Boolean(options.preserveError);
     if (window.location.hash === nextHash) {
         void handleRouteChange();
         return;

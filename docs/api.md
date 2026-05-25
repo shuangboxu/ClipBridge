@@ -12,6 +12,9 @@
 
 后续随着文本同步、文件、分享、管理员能力逐步完成，再继续补充。
 
+当前线上默认已关闭公开注册。
+如果后续需要重新开放，需把 `AUTH_ALLOW_REGISTRATION` 改成 `true` 后重启服务。
+
 ## 1. 统一响应格式
 
 所有接口都统一返回 JSON，外层结构固定如下：
@@ -103,6 +106,7 @@ Content-Type: application/json
 - `username` 长度要求 `3-64`
 - `password` 长度要求 `8-128`
 - 注册成功后会直接返回用户、设备和 token
+- 当 `AUTH_ALLOW_REGISTRATION=false` 时，该接口会直接返回 `403 registration is disabled`
 
 成功示例：
 
@@ -141,6 +145,7 @@ Content-Type: application/json
 - `400 username is required`
 - `400 username must be at least 3 characters`
 - `400 password must be at least 8 characters`
+- `403 registration is disabled`
 - `409 username already exists`
 
 ### 3.3 用户登录
@@ -378,7 +383,9 @@ Content-Type: application/json
 
 说明：
 
-- 设备被强制下线后，会同步撤销该设备名下所有 refresh token
+- 设备被强制下线后，会直接从数据库删除该设备记录
+- 同一台设备名下的 refresh token 会随着设备删除一起失效
+- 接口返回的 `device` 是删除前的设备快照，方便客户端提示用户
 - 如果下线的是当前设备，`current_device_forced_offline` 会返回 `true`
 
 常见失败：

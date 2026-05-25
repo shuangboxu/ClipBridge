@@ -35,9 +35,10 @@ type DatabaseConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret       string
-	AccessTokenTTL  time.Duration
-	RefreshTokenTTL time.Duration
+	JWTSecret         string
+	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
+	AllowRegistration bool
 }
 
 type CORSConfig struct {
@@ -70,9 +71,10 @@ func Load() (Config, error) {
 			PingTimeout:       time.Duration(getEnvInt("DB_PING_TIMEOUT_SECONDS", 3)) * time.Second,
 		},
 		Auth: AuthConfig{
-			JWTSecret:       getEnv("JWT_SECRET", "please-change-this-secret"),
-			AccessTokenTTL:  time.Duration(getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 120)) * time.Minute,
-			RefreshTokenTTL: time.Duration(getEnvInt("REFRESH_TOKEN_TTL_HOURS", 24*30)) * time.Hour,
+			JWTSecret:         getEnv("JWT_SECRET", "please-change-this-secret"),
+			AccessTokenTTL:    time.Duration(getEnvInt("ACCESS_TOKEN_TTL_MINUTES", 120)) * time.Minute,
+			RefreshTokenTTL:   time.Duration(getEnvInt("REFRESH_TOKEN_TTL_HOURS", 24*30)) * time.Hour,
+			AllowRegistration: getEnvBool("AUTH_ALLOW_REGISTRATION", false),
 		},
 		CORS: CORSConfig{
 			AllowOrigins: splitCSV(getEnv("CORS_ALLOW_ORIGINS", "*")),
@@ -161,6 +163,22 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return number
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func splitCSV(value string) []string {

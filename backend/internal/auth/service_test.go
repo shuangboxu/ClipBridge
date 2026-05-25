@@ -122,7 +122,7 @@ func TestUpdateDeviceNameUpdatesStoredDevice(t *testing.T) {
 	}
 }
 
-func TestForceDeviceOfflineDisablesDeviceAndRevokesRefreshTokens(t *testing.T) {
+func TestForceDeviceOfflineDeletesDeviceAndRevokesRefreshTokens(t *testing.T) {
 	repo := newFakeRepository()
 	service := NewService(repo, NewManager("test-secret", time.Hour), 24*time.Hour)
 
@@ -142,15 +142,15 @@ func TestForceDeviceOfflineDisablesDeviceAndRevokesRefreshTokens(t *testing.T) {
 	}
 
 	if device.IsActive {
-		t.Fatalf("expected device to become inactive")
-	}
-	if repo.devices[session.Device.ID].IsActive {
-		t.Fatalf("expected repository device to become inactive")
+		t.Fatalf("expected returned device snapshot to be marked inactive")
 	}
 
-	record := repo.refreshTokens[HashToken(session.Tokens.RefreshToken)]
-	if record.RevokedAt == nil {
-		t.Fatalf("expected refresh token to be revoked when device is forced offline")
+	if _, exists := repo.devices[session.Device.ID]; exists {
+		t.Fatalf("expected repository device to be deleted")
+	}
+
+	if _, exists := repo.refreshTokens[HashToken(session.Tokens.RefreshToken)]; exists {
+		t.Fatalf("expected refresh token records to be removed with deleted device")
 	}
 }
 
@@ -249,7 +249,7 @@ func (r *fakeRepository) TouchDeviceLastSeen(_ context.Context, userID, deviceID
 func (r *fakeRepository) ListDevices(_ context.Context, userID string) ([]Device, error) {
 	devices := make([]Device, 0)
 	for _, device := range r.devices {
-		if device.UserID == userID {
+		if device.UserID == userID && device.IsActive {
 			devices = append(devices, device)
 		}
 	}
@@ -267,20 +267,18 @@ func (r *fakeRepository) UpdateDeviceName(_ context.Context, userID, deviceID, d
 	return device, nil
 }
 
-func (r *fakeRepository) DeactivateDevice(_ context.Context, userID, deviceID string) (Device, error) {
+func (r *fakeRepository) DeleteDevice(_ context.Context, userID, deviceID string) (Device, error) {
 	device, ok := r.devices[deviceID]
 	if !ok || device.UserID != userID {
 		return Device{}, ErrNotFound
 	}
 
 	device.IsActive = false
-	r.devices[deviceID] = device
+	delete(r.devices, deviceID)
 
-	now := time.Now()
 	for tokenHash, record := range r.refreshTokens {
-		if record.UserID == userID && record.DeviceID == deviceID && record.RevokedAt == nil {
-			record.RevokedAt = &now
-			r.refreshTokens[tokenHash] = record
+		if record.UserID == userID && record.DeviceID == deviceID {
+			delete(r.refreshTokens, tokenHash)
 		}
 	}
 

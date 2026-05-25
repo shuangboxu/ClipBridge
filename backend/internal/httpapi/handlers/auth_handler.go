@@ -13,7 +13,8 @@ import (
 )
 
 type AuthHandler struct {
-	authService *auth.Service
+	authService        *auth.Service
+	allowRegistration bool
 }
 
 type registerRequest struct {
@@ -66,11 +67,19 @@ func NewAuthHandler(application *app.App) *AuthHandler {
 		return &AuthHandler{}
 	}
 	return &AuthHandler{
-		authService: application.AuthService,
+		authService:        application.AuthService,
+		allowRegistration: application.Config.Auth.AllowRegistration,
 	}
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	// 当前项目默认不开放公开注册。
+	// 只有显式打开配置后，才允许外部调用注册接口。
+	if !h.allowRegistration {
+		response.Error(w, r, http.StatusForbidden, "registration is disabled")
+		return
+	}
+
 	var req registerRequest
 	if err := decodeJSONBody(r, &req); err != nil {
 		response.Error(w, r, http.StatusBadRequest, "invalid request body")

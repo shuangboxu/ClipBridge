@@ -2,7 +2,7 @@ import { AUTH_ROUTE, NAV_ITEMS, PROTECTED_ROUTES, getRouteMeta } from "../config
 import { state, isPending } from "../state/store.js";
 import { createDefaultDeviceName, isMobileViewport } from "../utils/browser.js";
 import { escapeAttribute, escapeHTML } from "../utils/format.js";
-import { renderLoadingState, renderMessage } from "./common.js";
+import { renderErrorMessage, renderLoadingState, renderToast } from "./common.js";
 import { renderIcon } from "./icons.js";
 import { renderCurrentPage } from "./pages.js";
 
@@ -17,12 +17,14 @@ export function renderApp(appRoot) {
 }
 
 function renderAuthLayout() {
-    const submitLabel = state.authMode === "register" ? "注册" : "登录";
-    const submitLoadingLabel = state.authMode === "register" ? "正在注册..." : "正在登录...";
-    const authMessage = renderMessage(state.pageMessage, state.pageError);
+    const submitLabel = "登录";
+    const submitLoadingLabel = "正在登录...";
+    const authToast = renderToast(state.pageMessage);
+    const authError = renderErrorMessage(state.pageError);
 
     return `
         <main class="page-shell auth-stage">
+            ${authToast}
             <section class="auth-panel auth-panel-single">
                 <div class="auth-brand">
                     <img src="./assets/brand/app-icon.png" alt="ClipBridge">
@@ -34,31 +36,8 @@ function renderAuthLayout() {
 
                 <div class="panel-card auth-card">
                     <div class="auth-card-intro">
-                        <h1>${state.authMode === "register" ? "注册" : "登录"}</h1>
+                        <h1>登录</h1>
                         <p class="panel-lead">设备自动识别：<code>${escapeHTML(createDefaultDeviceName())}</code></p>
-                    </div>
-
-                    <div class="auth-card-illustration">
-                        <img src="./assets/illustrations/p0/auth-hero.webp" alt="ClipBridge 登录插画">
-                    </div>
-
-                    <div class="auth-tabs" role="tablist" aria-label="认证模式切换">
-                        <button
-                            type="button"
-                            class="tab-button ${state.authMode === "login" ? "is-active" : ""}"
-                            data-action="switch-auth-mode"
-                            data-mode="login"
-                        >
-                            登录
-                        </button>
-                        <button
-                            type="button"
-                            class="tab-button ${state.authMode === "register" ? "is-active" : ""}"
-                            data-action="switch-auth-mode"
-                            data-mode="register"
-                        >
-                            注册
-                        </button>
                     </div>
 
                     <form id="auth-form" class="form-grid">
@@ -69,7 +48,7 @@ function renderAuthLayout() {
 
                         <div class="field">
                             <label for="password">密码</label>
-                            <input id="password" name="password" type="password" minlength="8" maxlength="128" autocomplete="${state.authMode === "register" ? "new-password" : "current-password"}" value="${escapeAttribute(state.authForm.password)}" required>
+                            <input id="password" name="password" type="password" minlength="8" maxlength="128" autocomplete="current-password" value="${escapeAttribute(state.authForm.password)}" required>
                         </div>
 
                         <div class="actions">
@@ -79,7 +58,7 @@ function renderAuthLayout() {
                         </div>
                     </form>
 
-                    ${authMessage}
+                    ${authError}
                 </div>
             </section>
         </main>
@@ -102,6 +81,7 @@ function renderProtectedLayout() {
 
     return `
         <div class="${shellClassParts.join(" ")}">
+            ${renderToast(state.pageMessage)}
             <div class="sidebar-backdrop" data-action="close-sidebar"></div>
             <aside class="sidebar-shell">
                 <div class="sidebar-header">
@@ -163,7 +143,7 @@ function renderProtectedLayout() {
 
                 <main class="content-scroll app-content">
                     <div class="page-grid">
-                        ${renderMessage(state.pageMessage, state.pageError)}
+                        ${renderErrorMessage(state.pageError)}
                         ${state.isBootstrapping ? renderLoadingState() : renderCurrentPage(state.route)}
                     </div>
                 </main>

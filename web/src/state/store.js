@@ -3,7 +3,6 @@ import { detectDefaultServerBaseUrl } from "../utils/browser.js";
 
 export const state = {
     route: AUTH_ROUTE,
-    authMode: "login",
     serverBaseUrl: detectDefaultServerBaseUrl(),
     session: loadSession(),
     sidebarCollapsed: loadSidebarCollapsed(),
@@ -17,9 +16,9 @@ export const state = {
     devicePanel: {
         mode: "",
         deviceId: "",
-        draftName: "",
-        feedback: ""
+        draftName: ""
     },
+    // pageMessage 只用于短时 toast，页面级错误统一走 pageError。
     pageMessage: null,
     pageError: null,
     pendingKey: "",
@@ -84,8 +83,7 @@ export function openDevicePanel(mode, device) {
     state.devicePanel = {
         mode,
         deviceId: device?.id || "",
-        draftName: device?.device_name || "",
-        feedback: ""
+        draftName: device?.device_name || ""
     };
 }
 
@@ -93,8 +91,7 @@ export function closeDevicePanel() {
     state.devicePanel = {
         mode: "",
         deviceId: "",
-        draftName: "",
-        feedback: ""
+        draftName: ""
     };
 }
 
