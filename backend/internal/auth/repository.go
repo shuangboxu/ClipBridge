@@ -9,6 +9,7 @@ type Repository interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	GetUserByID(ctx context.Context, userID string) (User, error)
+	UpdateUserPassword(ctx context.Context, userID, passwordHash string) (User, error)
 	CreateDevice(ctx context.Context, userID, platform, deviceName string) (Device, error)
 	GetActiveUserDevice(ctx context.Context, userID, deviceID string) (User, Device, error)
 	TouchDeviceLastSeen(ctx context.Context, userID, deviceID string) error
@@ -20,4 +21,5 @@ type Repository interface {
 	RotateRefreshToken(ctx context.Context, oldTokenHash, userID, deviceID, newTokenHash string, expiresAt time.Time) (RefreshTokenRecord, error)
 	RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error
 	RevokeRefreshTokensByDevice(ctx context.Context, userID, deviceID string) error
+	RevokeRefreshTokensByUserExceptDevice(ctx context.Context, userID, keepDeviceID string) error
 }

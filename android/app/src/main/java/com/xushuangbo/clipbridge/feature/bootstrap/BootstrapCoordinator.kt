@@ -46,6 +46,7 @@ class BootstrapCoordinator(
             BootstrapState.Ready()
         } catch (error: AuthApiException) {
             if (error.httpCode == 401) {
+                sessionStore.clearClipboardSyncState()
                 sessionStore.clearAuth()
                 BootstrapState.LoggedOut("登录已失效，请重新登录")
             } else {

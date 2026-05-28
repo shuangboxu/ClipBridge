@@ -8,7 +8,13 @@
 - Refresh Token 刷新
 - 退出登录
 - 当前账号信息
+- 修改密码
 - 设备列表
+- 文本剪切板上传
+- 历史记录查询
+- 同步补拉
+- ACK
+- WebSocket 实时推送
 
 后续随着文本同步、文件、分享、管理员能力逐步完成，再继续补充。
 
@@ -56,6 +62,10 @@ Authorization: Bearer <access_token>
   - token 本身是否合法、是否过期
   - token 里的 `user_id` 是否真实存在
   - token 里的 `device_id` 是否真实存在且处于启用状态
+
+- WebSocket 对浏览器额外兼容：
+  - 原生浏览器 WebSocket 不能自定义 `Authorization` Header
+  - 因此 `GET /v1/ws` 同时支持 `?access_token=<access_token>` 方式建连
 
 ### 2.2 Refresh Token
 
@@ -237,7 +247,58 @@ Content-Type: application/json
 - 如果 body 为空，服务端会撤销当前设备下的全部 refresh token
 - 返回成功后，客户端应立即清理本地 token
 
-### 3.6 当前账号信息
+### 3.6 修改密码
+
+```http
+POST /v1/account/password
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "current_password": "password123",
+  "new_password": "new-password-456"
+}
+```
+
+说明：
+
+- `current_password` 必填
+- `new_password` 长度要求 `8-128`
+- 新密码不能和当前密码相同
+- 修改成功后，当前设备继续保持登录
+- 其他设备上的 refresh token 会被撤销，需要重新登录
+
+成功返回：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "success": true,
+    "user": {
+      "id": "4c3a7db2-9fb3-4baf-9c83-7a467fdaf861",
+      "username": "alice",
+      "created_at": "2026-05-23T07:40:00Z",
+      "updated_at": "2026-05-28T03:10:00Z"
+    }
+  },
+  "request_id": "8f6c99f1c2d14b77"
+}
+```
+
+常见失败：
+
+- `400 current_password is required`
+- `400 password must be at least 8 characters`
+- `400 new password must be different from current password`
+- `401 current password is incorrect`
+
+### 3.7 当前账号信息
 
 ```http
 GET /v1/account/me
@@ -263,7 +324,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### 3.7 设备列表
+### 3.8 设备列表
 
 ```http
 GET /v1/devices
@@ -300,7 +361,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### 3.8 修改设备名
+### 3.9 修改设备名
 
 ```http
 PATCH /v1/devices
@@ -344,7 +405,7 @@ Content-Type: application/json
 - `400 device_name must be at most 128 characters`
 - `404 device not found`
 
-### 3.9 强制下线设备
+### 3.10 强制下线设备
 
 ```http
 POST /v1/devices/offline
@@ -393,7 +454,151 @@ Content-Type: application/json
 - `400 device_id is required`
 - `404 device not found`
 
-### 3.10 受保护示例接口
+### 3.11 上传文本剪切板
+
+```http
+POST /v1/clipboard/items
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "content_type": "text",
+  "text_content": "hello from web"
+}
+```
+
+说明：
+
+- 当前阶段 `content_type` 只支持 `text`
+- 服务端会为每个用户分配递增 `seq`
+- 服务端会基于 `content_hash + 最近时间窗口` 做基础去重
+- 若命中去重，接口会返回最近一条已有记录，并把 `deduplicated` 设为 `true`
+
+成功示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "item": {
+      "id": "7d7f82a4-cfd7-4633-b6ad-4f040a6776d0",
+      "seq": 12,
+      "content_type": "text",
+      "text_content": "hello from web",
+      "content_hash": "4af4c0...",
+      "origin_device_id": "8a17fd87-50a2-4cd3-aabc-1d9d2c08f944",
+      "is_current_device_origin": true,
+      "created_at": "2026-05-25T01:20:00Z"
+    },
+    "deduplicated": false
+  },
+  "request_id": "8f6c99f1c2d14b77"
+}
+```
+
+常见失败：
+
+- `400 only text clipboard items are supported`
+- `400 text_content is required`
+- `400 text_content must be at most 65536 bytes`
+
+### 3.12 历史记录查询
+
+```http
+GET /v1/clipboard/items?limit=20&before_seq=120
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 默认按 `seq DESC` 返回
+- `before_seq` 为可选分页游标，表示“拉更旧的记录”
+- 响应里会同时带上 `latest_seq` 和 `current_device_ack_seq`
+
+### 3.13 同步补拉
+
+```http
+GET /v1/sync/pull?since_seq=8&limit=50
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 补拉按 `seq ASC` 返回，方便客户端顺序处理
+- `since_seq` 表示当前设备已经连续处理完成的最大序号
+- 响应里的 `next_since_seq` 可直接作为下一次补拉或 ACK 候选值
+
+### 3.14 ACK
+
+```http
+POST /v1/sync/ack
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "seq": 12
+}
+```
+
+说明：
+
+- ACK 会把当前设备的 `last_ack_seq` 推进到更大的值
+- 服务端会自动用 `GREATEST` 保护，避免 ACK 倒退
+
+### 3.15 WebSocket 实时推送
+
+连接方式：
+
+```http
+GET /v1/ws?access_token=<access_token>
+```
+
+服务端事件：
+
+- `sync.hello`
+- `sync.heartbeat`
+- `clipboard.new`
+- `sync.acknowledged`
+
+客户端事件：
+
+- `sync.ping`
+- `sync.ack`
+
+`clipboard.new` 示例：
+
+```json
+{
+  "type": "clipboard.new",
+  "item": {
+    "id": "7d7f82a4-cfd7-4633-b6ad-4f040a6776d0",
+    "seq": 12,
+    "content_type": "text",
+    "text_content": "hello from web",
+    "content_hash": "4af4c0...",
+    "origin_device_id": "8a17fd87-50a2-4cd3-aabc-1d9d2c08f944",
+    "is_current_device_origin": false,
+    "created_at": "2026-05-25T01:20:00Z"
+  }
+}
+```
+
+说明：
+
+- 实时广播会自动排除源设备，避免回环推送到上传发起端
+- `sync.heartbeat` 当前默认每 `20` 秒发送一次
+- Web 端建议在检测到序号缺口时立刻回退到 `GET /v1/sync/pull`
+
+### 3.16 受保护示例接口
 
 ```http
 GET /v1/system/profile
@@ -404,11 +609,15 @@ Authorization: Bearer <access_token>
 
 ## 4. 当前阶段边界
 
-这一阶段已经完成登录链路和基础设备读取能力，但还没有实现：
+这一阶段已经完成：
 
-- 一键下线其他设备
-- 修改密码
-- 文本同步上传
-- 历史记录查询
-- ACK 与补拉
+- 登录、刷新、退出登录
+- 当前账号信息与设备管理
+- 文本上传、历史查询、补拉、ACK
 - WebSocket 实时推送
+
+当前仍未实现：
+
+- 修改密码
+- 文件同步
+- 分享与管理员能力

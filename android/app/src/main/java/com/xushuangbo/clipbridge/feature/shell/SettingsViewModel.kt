@@ -73,6 +73,7 @@ class SettingsViewModel(
             }
 
             sessionStore.saveBaseUrl(normalizedAddress)
+            sessionStore.clearClipboardSyncState()
             sessionStore.clearAuth()
             _uiState.update {
                 it.copy(
@@ -95,6 +96,7 @@ class SettingsViewModel(
             }
 
             authApiClient.logout(currentSession)
+            sessionStore.clearClipboardSyncState()
             sessionStore.clearAuth()
 
             _uiState.update {

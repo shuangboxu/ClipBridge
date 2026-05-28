@@ -152,3 +152,5 @@ cd D:\MyProject\ClipBridge\android
 ```
 
 如果要补 UI 或交互，优先先看这个 README 里的反馈规则，不要再给页面叠第二套提示方式。
+
+当前 Android 底栏以代码实现为准，固定为 `首页 / 历史 / AI / 设置`，设备入口放在设置页内承接。

@@ -114,8 +114,14 @@ POST /v1/auth/logout
 
 ```http
 GET /v1/account/me
+POST /v1/account/password
 Authorization: Bearer <access_token>
 ```
+
+说明：
+
+- `POST /v1/account/password` 需要传 `current_password` 和 `new_password`
+- 修改密码成功后，当前设备保持登录，其他设备的 refresh token 会被撤销
 
 ### 4. 设备列表
 
@@ -173,9 +179,8 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:18080/v1/system/profile
 
 ## 当前阶段的限制
 
-- 还没有修改密码接口
-- 还没有文本同步、历史记录、ACK、补拉接口
-- 还没有 WebSocket 实时同步
+- 还没有文件同步、分享、管理员能力
+- 当前文本同步阶段只支持 `text`，还没有图片与文件内容
 
 这些会在路线图后续步骤继续补上。
 

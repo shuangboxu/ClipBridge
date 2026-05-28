@@ -44,6 +44,19 @@ export async function request(path, options = {}) {
     return payload.data || {};
 }
 
+export async function ensureValidAccessToken(minTTLSeconds = 60) {
+    if (!state.session?.tokens?.access_token) {
+        return false;
+    }
+
+    const expiresAt = Date.parse(state.session.tokens.access_token_expires_at || "");
+    if (Number.isFinite(expiresAt) && expiresAt - Date.now() > minTTLSeconds * 1000) {
+        return true;
+    }
+
+    return refreshSession();
+}
+
 async function refreshSession() {
     if (!state.session?.tokens?.refresh_token) {
         return false;

@@ -21,6 +21,75 @@ export function detectDefaultServerBaseUrl() {
     return trimServerBaseUrl(locationOrigin);
 }
 
+export function buildWebSocketURL(baseUrl, path, query = {}) {
+    const normalizedBaseUrl = trimServerBaseUrl(baseUrl || detectDefaultServerBaseUrl());
+    if (!normalizedBaseUrl) {
+        return "";
+    }
+
+    let url;
+    try {
+        url = new URL(path, normalizedBaseUrl);
+    } catch (error) {
+        return "";
+    }
+
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+
+    Object.entries(query).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") {
+            return;
+        }
+        url.searchParams.set(key, String(value));
+    });
+
+    return url.toString();
+}
+
+export async function readTextFromClipboard() {
+    if (!window.isSecureContext || !navigator.clipboard?.readText) {
+        throw new Error("当前浏览器不支持读取系统剪切板。");
+    }
+
+    try {
+        return await navigator.clipboard.readText();
+    } catch (error) {
+        throw new Error("读取系统剪切板失败，请检查浏览器权限。");
+    }
+}
+
+export async function writeTextToClipboard(value) {
+    const text = String(value || "");
+
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return;
+        } catch (error) {
+            // 权限被拒绝时继续走降级方案，避免直接失败。
+        }
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "readonly");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+
+    if (!copied) {
+        throw new Error("复制文本失败，请检查浏览器剪切板权限。");
+    }
+}
+
 function detectBrowserName() {
     const userAgent = navigator.userAgent.toLowerCase();
     if (userAgent.includes("edg/")) {

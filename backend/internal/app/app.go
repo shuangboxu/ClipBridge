@@ -6,8 +6,10 @@ import (
 	"fmt"
 
 	"clipbridge/backend/internal/auth"
+	"clipbridge/backend/internal/clipboard"
 	"clipbridge/backend/internal/config"
 	"clipbridge/backend/internal/database"
+	"clipbridge/backend/internal/realtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,10 +19,12 @@ import (
 // 2. 后续新增 store、service、ws hub 时，也有统一的装配入口；
 // 3. 初学者阅读时，更容易看清“服务启动到底依赖哪些东西”。
 type App struct {
-	Config       config.Config
-	DB           *pgxpool.Pool
-	TokenManager *auth.Manager
-	AuthService  *auth.Service
+	Config           config.Config
+	DB               *pgxpool.Pool
+	TokenManager     *auth.Manager
+	AuthService      *auth.Service
+	ClipboardService *clipboard.Service
+	RealtimeHub      *realtime.Hub
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {
@@ -42,12 +46,15 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 
 	tokenManager := auth.NewManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL)
 	authRepo := auth.NewPostgresRepository(pool)
+	clipboardRepo := clipboard.NewPostgresRepository(pool)
 
 	return &App{
-		Config:       cfg,
-		DB:           pool,
-		TokenManager: tokenManager,
-		AuthService:  auth.NewService(authRepo, tokenManager, cfg.Auth.RefreshTokenTTL),
+		Config:           cfg,
+		DB:               pool,
+		TokenManager:     tokenManager,
+		AuthService:      auth.NewService(authRepo, tokenManager, cfg.Auth.RefreshTokenTTL),
+		ClipboardService: clipboard.NewService(clipboardRepo),
+		RealtimeHub:      realtime.NewHub(),
 	}, nil
 }
 

@@ -143,6 +143,50 @@ func (s *Service) Logout(ctx context.Context, userID, deviceID, refreshToken str
 	return s.repo.RevokeRefreshTokensByDevice(ctx, userID, deviceID)
 }
 
+func (s *Service) ChangePassword(ctx context.Context, userID, currentDeviceID, currentPassword, newPassword string) (User, error) {
+	if s == nil || s.repo == nil {
+		return User{}, fmt.Errorf("auth service is not ready")
+	}
+	if strings.TrimSpace(currentPassword) == "" {
+		return User{}, fmt.Errorf("current_password is required")
+	}
+	if err := validatePassword(newPassword); err != nil {
+		return User{}, err
+	}
+	if currentPassword == newPassword {
+		return User{}, fmt.Errorf("new password must be different from current password")
+	}
+
+	// 修改密码前先刷新当前设备的在线时间，避免“账号刚完成操作却显示长时间未在线”。
+	if err := s.repo.TouchDeviceLastSeen(ctx, userID, currentDeviceID); err != nil {
+		return User{}, err
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	if err := CheckPassword(user.PasswordHash, currentPassword); err != nil {
+		return User{}, err
+	}
+
+	passwordHash, err := HashPassword(newPassword)
+	if err != nil {
+		return User{}, err
+	}
+
+	updatedUser, err := s.repo.UpdateUserPassword(ctx, userID, passwordHash)
+	if err != nil {
+		return User{}, err
+	}
+
+	// 当前设备保持在线，其他设备在 refresh 时会因为 token 已被撤销而重新登录。
+	if err := s.repo.RevokeRefreshTokensByUserExceptDevice(ctx, userID, currentDeviceID); err != nil {
+		return User{}, err
+	}
+	return updatedUser, nil
+}
+
 func (s *Service) AuthenticateAccessToken(ctx context.Context, accessToken string) (User, Device, error) {
 	if s == nil || s.repo == nil || s.tokenManager == nil {
 		return User{}, Device{}, fmt.Errorf("auth service is not ready")

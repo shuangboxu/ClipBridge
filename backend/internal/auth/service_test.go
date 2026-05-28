@@ -122,6 +122,70 @@ func TestUpdateDeviceNameUpdatesStoredDevice(t *testing.T) {
 	}
 }
 
+func TestChangePasswordUpdatesHashAndRevokesOtherDeviceTokens(t *testing.T) {
+	repo := newFakeRepository()
+	service := NewService(repo, NewManager("test-secret", time.Hour), 24*time.Hour)
+
+	currentSession, err := service.Register(context.Background(), "alice", "password123", "web", "Chrome")
+	if err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+
+	otherSession, err := service.Login(context.Background(), "alice", "password123", "android", "Pixel")
+	if err != nil {
+		t.Fatalf("Login returned error: %v", err)
+	}
+
+	updatedUser, err := service.ChangePassword(
+		context.Background(),
+		currentSession.User.ID,
+		currentSession.Device.ID,
+		"password123",
+		"new-password-456",
+	)
+	if err != nil {
+		t.Fatalf("ChangePassword returned error: %v", err)
+	}
+
+	if updatedUser.UpdatedAt.Equal(currentSession.User.UpdatedAt) {
+		t.Fatalf("expected updated_at to change after password update")
+	}
+	if err := CheckPassword(repo.users[currentSession.User.ID].PasswordHash, "new-password-456"); err != nil {
+		t.Fatalf("expected repository password hash to be updated: %v", err)
+	}
+
+	currentRefreshRecord := repo.refreshTokens[HashToken(currentSession.Tokens.RefreshToken)]
+	if currentRefreshRecord.RevokedAt != nil {
+		t.Fatalf("expected current device refresh token to stay active")
+	}
+
+	otherRefreshRecord := repo.refreshTokens[HashToken(otherSession.Tokens.RefreshToken)]
+	if otherRefreshRecord.RevokedAt == nil {
+		t.Fatalf("expected other device refresh token to be revoked")
+	}
+}
+
+func TestChangePasswordRejectsWrongCurrentPassword(t *testing.T) {
+	repo := newFakeRepository()
+	service := NewService(repo, NewManager("test-secret", time.Hour), 24*time.Hour)
+
+	session, err := service.Register(context.Background(), "alice", "password123", "web", "Chrome")
+	if err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+
+	_, err = service.ChangePassword(
+		context.Background(),
+		session.User.ID,
+		session.Device.ID,
+		"wrong-password",
+		"new-password-456",
+	)
+	if err != ErrInvalidCredentials {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
 func TestForceDeviceOfflineDeletesDeviceAndRevokesRefreshTokens(t *testing.T) {
 	repo := newFakeRepository()
 	service := NewService(repo, NewManager("test-secret", time.Hour), 24*time.Hour)
@@ -206,6 +270,18 @@ func (r *fakeRepository) GetUserByID(_ context.Context, userID string) (User, er
 	if !ok {
 		return User{}, ErrNotFound
 	}
+	return user, nil
+}
+
+func (r *fakeRepository) UpdateUserPassword(_ context.Context, userID, passwordHash string) (User, error) {
+	user, ok := r.users[userID]
+	if !ok {
+		return User{}, ErrNotFound
+	}
+
+	user.PasswordHash = passwordHash
+	user.UpdatedAt = time.Now()
+	r.users[userID] = user
 	return user, nil
 }
 
@@ -335,6 +411,17 @@ func (r *fakeRepository) RevokeRefreshTokensByDevice(_ context.Context, userID, 
 	now := time.Now()
 	for tokenHash, record := range r.refreshTokens {
 		if record.UserID == userID && record.DeviceID == deviceID && record.RevokedAt == nil {
+			record.RevokedAt = &now
+			r.refreshTokens[tokenHash] = record
+		}
+	}
+	return nil
+}
+
+func (r *fakeRepository) RevokeRefreshTokensByUserExceptDevice(_ context.Context, userID, keepDeviceID string) error {
+	now := time.Now()
+	for tokenHash, record := range r.refreshTokens {
+		if record.UserID == userID && record.DeviceID != keepDeviceID && record.RevokedAt == nil {
 			record.RevokedAt = &now
 			r.refreshTokens[tokenHash] = record
 		}

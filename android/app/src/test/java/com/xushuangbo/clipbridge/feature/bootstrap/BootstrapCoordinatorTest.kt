@@ -39,6 +39,7 @@ class BootstrapCoordinatorTest {
                 username = "alice",
                 deviceName = "android-pixel",
             ),
+            lastAckSeq = 12L,
         )
         val authApiClient = FakeAuthApiClient(
             currentAccountResult = AuthResult(
@@ -95,16 +96,20 @@ class BootstrapCoordinatorTest {
         assertEquals(BootstrapState.LoggedOut("登录已失效，请重新登录"), result)
         assertTrue(sessionStore.readSession().accessToken.isBlank())
         assertEquals("http://127.0.0.1:18080", sessionStore.readSession().baseUrl)
+        assertEquals(0L, sessionStore.readLastAckSeq())
     }
 }
 
 private class FakeSessionStore(
     private var storedSession: StoredSession = StoredSession(),
     private var syncEnabled: Boolean = false,
+    private var lastAckSeq: Long = 0L,
 ) : SessionStore {
     override fun readSession(): StoredSession = storedSession
 
     override fun isSyncEnabled(): Boolean = syncEnabled
+
+    override fun readLastAckSeq(): Long = lastAckSeq
 
     override fun saveBaseUrl(baseUrl: String) {
         storedSession = storedSession.copy(baseUrl = baseUrl)
@@ -116,6 +121,10 @@ private class FakeSessionStore(
 
     override fun saveSyncEnabled(enabled: Boolean) {
         syncEnabled = enabled
+    }
+
+    override fun saveLastAckSeq(seq: Long) {
+        lastAckSeq = seq
     }
 
     override fun saveAuthBundle(
@@ -140,6 +149,10 @@ private class FakeSessionStore(
             accessToken = tokens.accessToken,
             refreshToken = tokens.refreshToken,
         )
+    }
+
+    override fun clearClipboardSyncState() {
+        lastAckSeq = 0L
     }
 
     override fun clearAuth() {

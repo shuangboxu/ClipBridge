@@ -13,6 +13,12 @@ export const state = {
     },
     profile: null,
     devices: [],
+    clipboard: createInitialClipboardState(),
+    clipboardPanel: {
+        mode: "",
+        itemId: ""
+    },
+    settingsModal: createInitialSettingsModalState(),
     devicePanel: {
         mode: "",
         deviceId: "",
@@ -28,6 +34,9 @@ export const state = {
 export function setSession(session) {
     state.session = session;
     state.profile = null;
+    state.clipboard = createInitialClipboardState();
+    closeClipboardPanel();
+    closeSettingsModal();
     localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
 }
 
@@ -58,8 +67,26 @@ export function updateSessionDevice(device) {
 	localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(state.session));
 }
 
+export function updateSessionUser(user) {
+    if (!state.session) {
+        return;
+    }
+
+    state.session = {
+        ...state.session,
+        user: {
+            ...state.session.user,
+            ...user
+        }
+    };
+    localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(state.session));
+}
+
 export function clearSession() {
     state.session = null;
+    state.clipboard = createInitialClipboardState();
+    closeClipboardPanel();
+    closeSettingsModal();
     localStorage.removeItem(STORAGE_KEYS.session);
 }
 
@@ -95,6 +122,60 @@ export function closeDevicePanel() {
     };
 }
 
+export function openClipboardPanel(mode, item) {
+    state.clipboardPanel = {
+        mode,
+        itemId: item?.id || ""
+    };
+}
+
+export function closeClipboardPanel() {
+    state.clipboardPanel = {
+        mode: "",
+        itemId: ""
+    };
+}
+
+export function openSettingsModal(category = "general") {
+    state.settingsModal = {
+        ...state.settingsModal,
+        isOpen: true,
+        activeCategory: category || state.settingsModal.activeCategory || "general"
+    };
+}
+
+export function selectSettingsCategory(category) {
+    state.settingsModal = {
+        ...state.settingsModal,
+        activeCategory: category || "general"
+    };
+}
+
+export function updateSettingsPasswordForm(fields) {
+    state.settingsModal = {
+        ...state.settingsModal,
+        passwordForm: {
+            ...state.settingsModal.passwordForm,
+            ...fields
+        }
+    };
+}
+
+export function clearSettingsPasswordForm() {
+    state.settingsModal = {
+        ...state.settingsModal,
+        passwordForm: createEmptyPasswordForm()
+    };
+}
+
+export function closeSettingsModal() {
+    state.settingsModal = {
+        ...state.settingsModal,
+        isOpen: false,
+        passwordForm: createEmptyPasswordForm()
+    };
+}
+
 function loadSession() {
     const rawValue = localStorage.getItem(STORAGE_KEYS.session);
     if (!rawValue) {
@@ -112,4 +193,38 @@ function loadSession() {
 
 function loadSidebarCollapsed() {
     return localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === "1";
+}
+
+function createInitialClipboardState() {
+    return {
+        draftText: "",
+        items: [],
+        historyLimit: 20,
+        historyPageIndex: 0,
+        historyCursors: [null],
+        historyHasMore: false,
+        latestSeq: 0,
+        lastAckSeq: 0,
+        pendingAckSeq: 0,
+        wsStatus: "disconnected",
+        wsLastEventAt: "",
+        wsLastHeartbeatAt: "",
+        wsReconnectAttempt: 0
+    };
+}
+
+function createInitialSettingsModalState() {
+    return {
+        isOpen: false,
+        activeCategory: "general",
+        passwordForm: createEmptyPasswordForm()
+    };
+}
+
+function createEmptyPasswordForm() {
+    return {
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+    };
 }

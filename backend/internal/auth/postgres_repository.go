@@ -91,6 +91,29 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, userID string) (Us
 	return user, nil
 }
 
+func (r *PostgresRepository) UpdateUserPassword(ctx context.Context, userID, passwordHash string) (User, error) {
+	var user User
+	err := r.db.QueryRow(ctx, `
+		UPDATE users
+		SET password_hash = $2, updated_at = now()
+		WHERE id = $1
+		RETURNING id, username, password_hash, created_at, updated_at
+	`, userID, passwordHash).Scan(
+		&user.ID,
+		&user.Username,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("update user password failed: %w", err)
+	}
+	return user, nil
+}
+
 func (r *PostgresRepository) CreateDevice(ctx context.Context, userID, platform, deviceName string) (Device, error) {
 	deviceID, err := id.NewUUID()
 	if err != nil {
@@ -343,6 +366,18 @@ func (r *PostgresRepository) RevokeRefreshTokensByDevice(ctx context.Context, us
 	`, userID, deviceID)
 	if err != nil {
 		return fmt.Errorf("revoke refresh tokens by device failed: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) RevokeRefreshTokensByUserExceptDevice(ctx context.Context, userID, keepDeviceID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE auth_refresh_tokens
+		SET revoked_at = now()
+		WHERE user_id = $1 AND device_id <> $2 AND revoked_at IS NULL
+	`, userID, keepDeviceID)
+	if err != nil {
+		return fmt.Errorf("revoke refresh tokens by user except device failed: %w", err)
 	}
 	return nil
 }

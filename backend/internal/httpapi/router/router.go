@@ -15,6 +15,9 @@ func New(application *app.App) http.Handler {
 	authHandler := handlers.NewAuthHandler(application)
 	accountHandler := handlers.NewAccountHandler(application)
 	deviceHandler := handlers.NewDeviceHandler(application)
+	clipboardHandler := handlers.NewClipboardHandler(application)
+	syncHandler := handlers.NewSyncHandler(application)
+	wsHandler := handlers.NewWSHandler(application)
 
 	router := newSimpleRouter()
 	router.Handle(http.MethodGet, "/healthz", http.HandlerFunc(healthHandler.Get))
@@ -26,16 +29,27 @@ func New(application *app.App) http.Handler {
 	protectedProfile := middleware.Auth(application.AuthService)(http.HandlerFunc(systemHandler.GetProfile))
 	protectedLogout := middleware.Auth(application.AuthService)(http.HandlerFunc(authHandler.Logout))
 	protectedMe := middleware.Auth(application.AuthService)(http.HandlerFunc(accountHandler.GetMe))
+	protectedChangePassword := middleware.Auth(application.AuthService)(http.HandlerFunc(accountHandler.ChangePassword))
 	protectedDevices := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.List))
 	protectedUpdateDevice := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.Update))
 	protectedForceOfflineDevice := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.ForceOffline))
+	protectedCreateClipboardItem := middleware.Auth(application.AuthService)(http.HandlerFunc(clipboardHandler.CreateItem))
+	protectedListClipboardItems := middleware.Auth(application.AuthService)(http.HandlerFunc(clipboardHandler.ListItems))
+	protectedPullSync := middleware.Auth(application.AuthService)(http.HandlerFunc(syncHandler.Pull))
+	protectedAckSync := middleware.Auth(application.AuthService)(http.HandlerFunc(syncHandler.Ack))
 
 	router.Handle(http.MethodGet, "/v1/system/profile", protectedProfile)
 	router.Handle(http.MethodPost, "/v1/auth/logout", protectedLogout)
 	router.Handle(http.MethodGet, "/v1/account/me", protectedMe)
+	router.Handle(http.MethodPost, "/v1/account/password", protectedChangePassword)
 	router.Handle(http.MethodGet, "/v1/devices", protectedDevices)
 	router.Handle(http.MethodPatch, "/v1/devices", protectedUpdateDevice)
 	router.Handle(http.MethodPost, "/v1/devices/offline", protectedForceOfflineDevice)
+	router.Handle(http.MethodPost, "/v1/clipboard/items", protectedCreateClipboardItem)
+	router.Handle(http.MethodGet, "/v1/clipboard/items", protectedListClipboardItems)
+	router.Handle(http.MethodGet, "/v1/sync/pull", protectedPullSync)
+	router.Handle(http.MethodPost, "/v1/sync/ack", protectedAckSync)
+	router.Handle(http.MethodGet, "/v1/ws", http.HandlerFunc(wsHandler.Connect))
 
 	// 中间件顺序很重要：
 	// 1. 先生成 request_id，确保后面的日志和响应都能带上它；

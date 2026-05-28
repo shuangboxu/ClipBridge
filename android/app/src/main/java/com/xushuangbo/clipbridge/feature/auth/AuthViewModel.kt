@@ -154,6 +154,9 @@ class AuthViewModel(
                     "鉴权成功但未返回令牌"
                 }
 
+                // 新登录完成后要清理上一轮环境残留的 ACK 状态，避免把旧设备进度带进新会话。
+                sessionStore.clearClipboardSyncState()
+
                 // 登录/注册成功后，把当前环境和鉴权结果一起持久化，
                 // 这样应用重启时就能直接走启动校验流程。
                 sessionStore.saveAuthBundle(

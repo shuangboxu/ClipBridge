@@ -4,7 +4,7 @@ import { createDefaultDeviceName, isMobileViewport } from "../utils/browser.js";
 import { escapeAttribute, escapeHTML } from "../utils/format.js";
 import { renderErrorMessage, renderLoadingState, renderToast } from "./common.js";
 import { renderIcon } from "./icons.js";
-import { renderCurrentPage } from "./pages.js";
+import { renderCurrentPage, renderSettingsModal } from "./pages.js";
 
 export function renderApp(appRoot) {
     if (!appRoot) {
@@ -108,9 +108,13 @@ function renderProtectedLayout() {
                 </nav>
 
                 <div class="sidebar-footer">
-                    <button type="button" class="sidebar-logout" data-action="logout" ${isPending("logout") ? "disabled" : ""}>
-                        ${renderIcon("logout")}
-                        <span class="sidebar-nav-text">${isPending("logout") ? "正在退出..." : "退出登录"}</span>
+                    <button
+                        type="button"
+                        class="sidebar-footer-button ${state.settingsModal.isOpen ? "is-active" : ""}"
+                        data-action="open-settings"
+                    >
+                        ${renderIcon("settings")}
+                        <span class="sidebar-nav-text">设置</span>
                     </button>
                 </div>
             </aside>
@@ -148,6 +152,8 @@ function renderProtectedLayout() {
                     </div>
                 </main>
             </div>
+
+            ${renderSettingsModal()}
         </div>
     `;
 }

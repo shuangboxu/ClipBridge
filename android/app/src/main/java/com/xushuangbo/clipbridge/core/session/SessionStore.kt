@@ -25,11 +25,15 @@ interface SessionStore {
 
     fun isSyncEnabled(): Boolean
 
+    fun readLastAckSeq(): Long
+
     fun saveBaseUrl(baseUrl: String)
 
     fun saveDeviceName(deviceName: String)
 
     fun saveSyncEnabled(enabled: Boolean)
+
+    fun saveLastAckSeq(seq: Long)
 
     fun saveAuthBundle(
         baseUrl: String,
@@ -40,6 +44,8 @@ interface SessionStore {
     )
 
     fun updateTokens(tokens: TokenBundle)
+
+    fun clearClipboardSyncState()
 
     fun clearAuth()
 }
@@ -62,6 +68,10 @@ class PreferenceSessionStore(
         return preferences.getBoolean(KEY_SYNC_ENABLED, false)
     }
 
+    override fun readLastAckSeq(): Long {
+        return preferences.getLong(KEY_LAST_ACK_SEQ, 0L)
+    }
+
     override fun saveBaseUrl(baseUrl: String) {
         preferences.edit()
             .putString(KEY_BASE_URL, baseUrl)
@@ -77,6 +87,12 @@ class PreferenceSessionStore(
     override fun saveSyncEnabled(enabled: Boolean) {
         preferences.edit()
             .putBoolean(KEY_SYNC_ENABLED, enabled)
+            .apply()
+    }
+
+    override fun saveLastAckSeq(seq: Long) {
+        preferences.edit()
+            .putLong(KEY_LAST_ACK_SEQ, seq)
             .apply()
     }
 
@@ -105,8 +121,15 @@ class PreferenceSessionStore(
             .apply()
     }
 
+    override fun clearClipboardSyncState() {
+        preferences.edit()
+            .remove(KEY_LAST_ACK_SEQ)
+            .apply()
+    }
+
     override fun clearAuth() {
         // 退出登录时保留服务地址和设备名，方便用户重新登录或切换环境后继续填写。
+        clearClipboardSyncState()
         preferences.edit()
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
@@ -123,5 +146,6 @@ class PreferenceSessionStore(
         const val KEY_USERNAME = "username"
         const val KEY_DEVICE_NAME = "device_name"
         const val KEY_SYNC_ENABLED = "sync_enabled"
+        const val KEY_LAST_ACK_SEQ = "last_ack_seq"
     }
 }

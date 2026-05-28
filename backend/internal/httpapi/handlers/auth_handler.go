@@ -13,7 +13,7 @@ import (
 )
 
 type AuthHandler struct {
-	authService        *auth.Service
+	authService       *auth.Service
 	allowRegistration bool
 }
 
@@ -67,7 +67,7 @@ func NewAuthHandler(application *app.App) *AuthHandler {
 		return &AuthHandler{}
 	}
 	return &AuthHandler{
-		authService:        application.AuthService,
+		authService:       application.AuthService,
 		allowRegistration: application.Config.Auth.AllowRegistration,
 	}
 }

@@ -11,4 +11,8 @@ object AppTestTags {
     const val AuthLoginToggle = "auth_login_toggle"
     const val AuthSubmitButton = "auth_submit_button"
     const val HomeScreen = "home_screen"
+    const val HistoryScreen = "history_screen"
+    const val HistoryDraftField = "history_draft_field"
+    const val HistoryUploadButton = "history_upload_button"
+    const val HistoryRefreshButton = "history_refresh_button"
 }

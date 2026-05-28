@@ -63,6 +63,20 @@ export function renderIcon(name) {
                 <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.1a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.1a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.1a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.1a1 1 0 0 0-.9.6z"></path>
             </svg>
         `,
+        security: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6z"></path>
+                <path d="M10 12.5l1.3 1.3L14.8 10"></path>
+            </svg>
+        `,
+        session: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="14" rx="2"></rect>
+                <path d="M8 20h8"></path>
+                <path d="M12 18v2"></path>
+                <path d="M8.5 10.5h7"></path>
+            </svg>
+        `,
         "sidebar-open": `
             <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="16" rx="2"></rect>
@@ -100,6 +114,19 @@ export function renderIcon(name) {
             <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M3 17.25V21h3.75L18.8 8.95l-3.75-3.75z"></path>
                 <path d="M14.95 5.2l3.75 3.75"></path>
+            </svg>
+        `,
+        upload: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 16V5"></path>
+                <path d="M8 9l4-4 4 4"></path>
+                <path d="M5 19h14"></path>
+            </svg>
+        `,
+        copy: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+                <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
             </svg>
         `,
         logout: `
