@@ -4,15 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"clipbridge/backend/internal/id"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-const duplicateWindow = 10 * time.Second
 
 type PostgresRepository struct {
 	db *pgxpool.Pool
@@ -55,9 +52,7 @@ func (r *PostgresRepository) CreateTextItem(ctx context.Context, params CreateTe
 	if err != nil {
 		return CreateTextItemResult{}, err
 	}
-	if found &&
-		latestItem.ContentHash == params.ContentHash &&
-		time.Since(latestItem.CreatedAt) <= duplicateWindow {
+	if shouldDeduplicateLatestItem(found, latestItem, params.ContentHash) {
 		if err := tx.Commit(ctx); err != nil {
 			return CreateTextItemResult{}, fmt.Errorf("commit duplicated clipboard item failed: %w", err)
 		}
@@ -281,6 +276,12 @@ func (r *PostgresRepository) getLatestUserItem(ctx context.Context, tx pgx.Tx, u
 		return Item{}, false, fmt.Errorf("get latest clipboard item failed: %w", err)
 	}
 	return item, true, nil
+}
+
+func shouldDeduplicateLatestItem(found bool, latestItem Item, nextContentHash string) bool {
+	// 强制去重：只比较“当前最新一条”和“本次待写入内容”。
+	// 只要两者内容哈希一致，就直接复用最新一条，不再新增相邻重复记录。
+	return found && latestItem.ContentHash == nextContentHash
 }
 
 func scanItems(rows pgx.Rows) ([]Item, error) {

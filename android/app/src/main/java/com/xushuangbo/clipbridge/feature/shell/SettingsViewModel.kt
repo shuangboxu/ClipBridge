@@ -45,8 +45,7 @@ class SettingsViewModel(
     fun toggleSyncEnabled() {
         val nextValue = !_uiState.value.syncEnabled
 
-        // 这里先把“同步开关”的位置和状态固定下来，
-        // 后面真正接后台同步服务时，只需要把这个状态接到服务层即可。
+        // 这里先把同步开关落到本地，界面层再据此启动或停止后台同步服务。
         sessionStore.saveSyncEnabled(nextValue)
         _uiState.update {
             it.copy(

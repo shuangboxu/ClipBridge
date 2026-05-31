@@ -204,7 +204,8 @@ fun ClipBridgeApp(
             val historyViewModel: HistoryViewModel = viewModel(
                 factory = HistoryViewModel.factory(
                     sessionStore = resolvedContainer.sessionStore,
-                    clipboardApiClient = resolvedContainer.clipboardApiClient,
+                    clipboardSyncCoordinator = resolvedContainer.clipboardSyncCoordinator,
+                    historyUpdateBus = resolvedContainer.historyUpdateBus,
                 ),
             )
 

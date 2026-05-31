@@ -28,6 +28,8 @@ import com.xushuangbo.clipbridge.core.network.SyncPullResult
 import com.xushuangbo.clipbridge.core.network.TokenBundle
 import com.xushuangbo.clipbridge.core.session.SessionStore
 import com.xushuangbo.clipbridge.core.session.StoredSession
+import com.xushuangbo.clipbridge.core.sync.ClipboardSyncCoordinator
+import com.xushuangbo.clipbridge.core.sync.HistoryUpdateBus
 import com.xushuangbo.clipbridge.feature.auth.AuthScreen
 import com.xushuangbo.clipbridge.feature.auth.AuthUiState
 import com.xushuangbo.clipbridge.ui.theme.ClipBridgeTheme
@@ -78,11 +80,10 @@ class AuthFlowUiTest {
         composeRule.setContent {
             ClipBridgeTheme {
                 ClipBridgeApp(
-                    appContainer = AppContainer(
+                    appContainer = createTestAppContainer(
                         sessionStore = sessionStore,
                         authApiClient = authApiClient,
                         clipboardApiClient = clipboardApiClient,
-                        defaultDeviceName = "android-test",
                     ),
                 )
             }
@@ -123,11 +124,10 @@ class AuthFlowUiTest {
         composeRule.setContent {
             ClipBridgeTheme {
                 ClipBridgeApp(
-                    appContainer = AppContainer(
+                    appContainer = createTestAppContainer(
                         sessionStore = sessionStore,
                         authApiClient = authApiClient,
                         clipboardApiClient = clipboardApiClient,
-                        defaultDeviceName = "android-test",
                     ),
                 )
             }
@@ -142,6 +142,24 @@ class AuthFlowUiTest {
         composeRule.onNodeWithTag(AppTestTags.HistoryUploadButton).performClick()
         composeRule.onNodeWithText("手动上传文本").assertIsDisplayed()
     }
+}
+
+private fun createTestAppContainer(
+    sessionStore: SessionStore,
+    authApiClient: AuthApiClient,
+    clipboardApiClient: ClipboardApiClient,
+): AppContainer {
+    return AppContainer(
+        sessionStore = sessionStore,
+        authApiClient = authApiClient,
+        clipboardApiClient = clipboardApiClient,
+        clipboardSyncCoordinator = ClipboardSyncCoordinator(
+            sessionStore = sessionStore,
+            clipboardApiClient = clipboardApiClient,
+        ),
+        historyUpdateBus = HistoryUpdateBus(),
+        defaultDeviceName = "android-test",
+    )
 }
 
 private class InMemorySessionStore(

@@ -10,6 +10,8 @@ import com.xushuangbo.clipbridge.core.network.SyncPullResult
 import com.xushuangbo.clipbridge.core.network.TokenBundle
 import com.xushuangbo.clipbridge.core.session.SessionStore
 import com.xushuangbo.clipbridge.core.session.StoredSession
+import com.xushuangbo.clipbridge.core.sync.ClipboardSyncCoordinator
+import com.xushuangbo.clipbridge.core.sync.HistoryUpdateBus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -34,7 +36,11 @@ class HistoryViewModelTest {
                 currentDeviceAckSeq = 8L,
             ),
         )
-        val viewModel = HistoryViewModel(sessionStore, clipboardApiClient)
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            HistoryUpdateBus(),
+        )
 
         viewModel.ensureLoaded()
         advanceUntilIdle()
@@ -64,7 +70,11 @@ class HistoryViewModelTest {
                 ),
             ),
         )
-        val viewModel = HistoryViewModel(sessionStore, clipboardApiClient)
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            HistoryUpdateBus(),
+        )
 
         viewModel.updateDraftText("uploaded")
         viewModel.uploadDraftText()
@@ -80,7 +90,11 @@ class HistoryViewModelTest {
         val clipboardApiClient = FakeHistoryClipboardApiClient(
             uploadError = AuthApiException(message = "上传失败"),
         )
-        val viewModel = HistoryViewModel(sessionStore, clipboardApiClient)
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            HistoryUpdateBus(),
+        )
 
         viewModel.updateDraftText("keep me")
         viewModel.uploadDraftText()
@@ -102,7 +116,11 @@ class HistoryViewModelTest {
                 tokens = TokenBundle("new-access", "new-refresh"),
             ),
         )
-        val viewModel = HistoryViewModel(sessionStore, clipboardApiClient)
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            HistoryUpdateBus(),
+        )
 
         viewModel.refreshHistory()
         advanceUntilIdle()
@@ -126,7 +144,11 @@ class HistoryViewModelTest {
                 currentDeviceAckSeq = 4L,
             ),
         )
-        val viewModel = HistoryViewModel(sessionStore, clipboardApiClient)
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            HistoryUpdateBus(),
+        )
 
         viewModel.pullRemoteHistory()
         advanceUntilIdle()
@@ -145,13 +167,123 @@ class HistoryViewModelTest {
                 nextSinceSeq = 9L,
             ),
         )
-        val viewModel = HistoryViewModel(sessionStore, clipboardApiClient)
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            HistoryUpdateBus(),
+        )
 
         viewModel.pullRemoteHistory()
         advanceUntilIdle()
 
         assertTrue(clipboardApiClient.ackedSeqs.isEmpty())
         assertEquals(3L, sessionStore.readLastAckSeq())
+    }
+
+    @Test
+    fun liveHistoryUpdate_marksPendingWhenViewingLatestPage() = runTest {
+        val sessionStore = FakeHistorySessionStore()
+        val historyUpdateBus = HistoryUpdateBus()
+        val clipboardApiClient = FakeHistoryClipboardApiClient(
+            historyResults = ArrayDeque(
+                listOf(
+                    historyResultOf(
+                        items = listOf(sampleItem(seq = 1L, text = "old")),
+                        latestSeq = 1L,
+                    ),
+                    historyResultOf(
+                        items = listOf(sampleItem(seq = 2L, text = "new")),
+                        latestSeq = 2L,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            historyUpdateBus,
+        )
+
+        viewModel.ensureLoaded()
+        advanceUntilIdle()
+        historyUpdateBus.notifyHistoryUpdated()
+        advanceUntilIdle()
+
+        assertEquals("old", viewModel.uiState.value.items.first().textContent)
+        assertTrue(viewModel.uiState.value.hasPendingLatestUpdates)
+    }
+
+    @Test
+    fun liveHistoryUpdate_marksPendingWhenViewingOlderPage() = runTest {
+        val sessionStore = FakeHistorySessionStore()
+        val historyUpdateBus = HistoryUpdateBus()
+        val clipboardApiClient = FakeHistoryClipboardApiClient(
+            historyResults = ArrayDeque(
+                listOf(
+                    historyResultOf(
+                        items = listOf(sampleItem(seq = 6L, text = "page-1")),
+                        latestSeq = 6L,
+                        hasMore = true,
+                    ),
+                    historyResultOf(
+                        items = listOf(sampleItem(seq = 5L, text = "page-2")),
+                        latestSeq = 6L,
+                        hasMore = false,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            historyUpdateBus,
+        )
+
+        viewModel.ensureLoaded()
+        advanceUntilIdle()
+        viewModel.loadOlderHistoryPage()
+        advanceUntilIdle()
+        historyUpdateBus.notifyHistoryUpdated()
+        advanceUntilIdle()
+
+        assertEquals(2, viewModel.uiState.value.currentPage)
+        assertEquals("page-2", viewModel.uiState.value.items.first().textContent)
+        assertTrue(viewModel.uiState.value.hasPendingLatestUpdates)
+    }
+
+    @Test
+    fun showLatestHistory_refreshesLatestPageAndClearsPendingFlag() = runTest {
+        val sessionStore = FakeHistorySessionStore()
+        val historyUpdateBus = HistoryUpdateBus()
+        val clipboardApiClient = FakeHistoryClipboardApiClient(
+            historyResults = ArrayDeque(
+                listOf(
+                    historyResultOf(
+                        items = listOf(sampleItem(seq = 1L, text = "old")),
+                        latestSeq = 1L,
+                    ),
+                    historyResultOf(
+                        items = listOf(sampleItem(seq = 2L, text = "new")),
+                        latestSeq = 2L,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = HistoryViewModel(
+            sessionStore,
+            ClipboardSyncCoordinator(sessionStore, clipboardApiClient),
+            historyUpdateBus,
+        )
+
+        viewModel.ensureLoaded()
+        advanceUntilIdle()
+        historyUpdateBus.notifyHistoryUpdated()
+        advanceUntilIdle()
+        viewModel.showLatestHistory(scrollToTop = true)
+        advanceUntilIdle()
+
+        assertEquals("new", viewModel.uiState.value.items.first().textContent)
+        assertEquals(false, viewModel.uiState.value.hasPendingLatestUpdates)
     }
 
     private fun sampleItem(seq: Long, text: String): ClipboardItem {
@@ -163,6 +295,19 @@ class HistoryViewModelTest {
             originDeviceId = "device-1",
             isCurrentDeviceOrigin = true,
             createdAt = "2026-05-26T10:00:00Z",
+        )
+    }
+
+    private fun historyResultOf(
+        items: List<ClipboardItem>,
+        latestSeq: Long,
+        hasMore: Boolean = false,
+    ): ClipboardHistoryResult {
+        return ClipboardHistoryResult(
+            items = items,
+            hasMore = hasMore,
+            latestSeq = latestSeq,
+            currentDeviceAckSeq = 0L,
         )
     }
 }

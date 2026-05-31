@@ -135,16 +135,16 @@ private fun SyncCenterPanel(
             Spacer(modifier = Modifier.height(18.dp))
 
             Text(
-                text = if (enabled) "同步能力预留已开启" else "同步能力预留已关闭",
+                text = if (enabled) "同步已开启" else "同步已关闭",
                 style = MaterialTheme.typography.headlineMedium,
                 color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = if (enabled) {
-                    "这里只保留第一轮入口状态，不会启动后台服务或静默同步。"
+                    "后台同步服务已接入，剪贴板变化会自动上传；悬浮球需要悬浮窗权限。"
                 } else {
-                    "点击中间圆形按钮只会记录本地预留状态，方便后续接真实同步服务。"
+                    "开启后会启动后台同步服务，并在可用时显示悬浮球。"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

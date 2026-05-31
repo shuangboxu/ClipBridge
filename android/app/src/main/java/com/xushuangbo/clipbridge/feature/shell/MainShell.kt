@@ -7,6 +7,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xushuangbo.clipbridge.feature.sync.SyncRuntimeEffect
+import com.xushuangbo.clipbridge.feature.sync.SyncServiceController
 
 @Composable
 fun MainShellRoute(
@@ -18,15 +20,18 @@ fun MainShellRoute(
     val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
     val deviceUiState by deviceViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val appContext = context.applicationContext
 
     // 这里仍然保留在入口层收集事件，避免把 ViewModel 和 Toast 逻辑塞进壳层组件里。
     LaunchedEffect(settingsViewModel) {
         settingsViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
             onRequireAuth(message)
         }
     }
     LaunchedEffect(deviceViewModel) {
         deviceViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
             onRequireAuth(message)
         }
     }
@@ -40,6 +45,11 @@ fun MainShellRoute(
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
+
+    SyncRuntimeEffect(
+        syncEnabled = settingsUiState.syncEnabled,
+        hasSession = settingsUiState.currentDeviceId.isNotBlank() && settingsUiState.serviceAddress.isNotBlank(),
+    )
 
     ShellScaffold(
         settingsUiState = settingsUiState,

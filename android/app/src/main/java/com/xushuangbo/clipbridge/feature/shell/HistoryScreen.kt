@@ -1,6 +1,5 @@
 package com.xushuangbo.clipbridge.feature.shell
 
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
@@ -16,13 +15,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,7 +38,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +55,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xushuangbo.clipbridge.app.AppTestTags
 import com.xushuangbo.clipbridge.core.network.ClipboardItem
+import com.xushuangbo.clipbridge.feature.sync.CLIPBRIDGE_HISTORY_LABEL
+import com.xushuangbo.clipbridge.feature.sync.buildClipboardClipData
 import com.xushuangbo.clipbridge.ui.components.PageErrorBanner
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -70,6 +76,15 @@ fun HistoryScreenRoute(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    var latestScrollRequestId by remember { mutableStateOf(0) }
+    var handledScrollRequestId by remember { mutableStateOf(0) }
+    val isPinnedToTop by androidx.compose.runtime.remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 &&
+                listState.firstVisibleItemScrollOffset <= 8
+        }
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.ensureLoaded()
@@ -87,21 +102,56 @@ fun HistoryScreenRoute(
         }
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.scrollToTopEvents.collect {
+            latestScrollRequestId += 1
+        }
+    }
+
+    LaunchedEffect(latestScrollRequestId, uiState.items.firstOrNull()?.id) {
+        if (latestScrollRequestId == 0 || handledScrollRequestId == latestScrollRequestId) {
+            return@LaunchedEffect
+        }
+
+        // LazyColumn 在顶部插入新数据时，会尽量保持当前阅读位置，
+        // 这里等新列表完成一帧布局后再强制回到第 0 项，确保最新记录真正顶下来。
+        withFrameNanos { }
+        listState.scrollToItem(0)
+        withFrameNanos { }
+        listState.scrollToItem(0)
+        handledScrollRequestId = latestScrollRequestId
+    }
+
     LaunchedEffect(pendingShortcutAction) {
         val action = pendingShortcutAction ?: return@LaunchedEffect
         viewModel.handleShortcutAction(action)
         onShortcutActionConsumed()
     }
 
+    LaunchedEffect(uiState.hasPendingLatestUpdates, uiState.currentPage, isPinnedToTop) {
+        if (
+            uiState.hasPendingLatestUpdates &&
+            uiState.currentPage == 1 &&
+            isPinnedToTop &&
+            !uiState.isLoading &&
+            !uiState.isUploading &&
+            !uiState.isPulling
+        ) {
+            viewModel.showLatestHistory(scrollToTop = true)
+        }
+    }
+
     HistoryScreen(
         innerPadding = innerPadding,
         uiState = uiState,
+        listState = listState,
         searchQuery = searchQuery,
         onSearchQueryChange = onSearchQueryChange,
         onDraftTextChange = viewModel::updateDraftText,
         onUploadClick = viewModel::uploadDraftText,
         uploadDialogVisible = uploadDialogVisible,
         onUploadDialogDismiss = onUploadDialogDismiss,
+        onShowLatestUpdates = { viewModel.showLatestHistory(scrollToTop = true) },
         onPreviousPage = viewModel::loadNewerHistoryPage,
         onNextPage = viewModel::loadOlderHistoryPage,
     )
@@ -112,12 +162,14 @@ fun HistoryScreenRoute(
 fun HistoryScreen(
     innerPadding: PaddingValues,
     uiState: HistoryUiState,
+    listState: LazyListState,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onDraftTextChange: (String) -> Unit,
     onUploadClick: () -> Unit,
     uploadDialogVisible: Boolean,
     onUploadDialogDismiss: () -> Unit,
+    onShowLatestUpdates: () -> Unit,
     onPreviousPage: () -> Unit,
     onNextPage: () -> Unit,
 ) {
@@ -146,6 +198,14 @@ fun HistoryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        if (uiState.hasPendingLatestUpdates) {
+            PendingLatestHistoryBanner(
+                isViewingLatestPage = uiState.currentPage == 1,
+                onClick = onShowLatestUpdates,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         Column(modifier = Modifier.weight(1f)) {
             if (filteredItems.isEmpty() && !uiState.isLoading) {
                 EmptyHistoryState()
@@ -153,6 +213,7 @@ fun HistoryScreen(
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    state = listState,
                 ) {
                     items(
                         items = filteredItems,
@@ -258,6 +319,43 @@ private fun HistoryToolbar(
             placeholder = { Text("只过滤当前已加载列表") },
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+@Composable
+private fun PendingLatestHistoryBanner(
+    isViewingLatestPage: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Refresh,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = if (isViewingLatestPage) {
+                    "有新的历史记录，点击立即刷新"
+                } else {
+                    "有新的历史记录，点击回到最新"
+                },
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -388,7 +486,7 @@ private fun HistoryPagerBar(
 
 private fun copyTextToClipboard(text: String, context: Context) {
     val clipboard = context.getSystemService(ClipboardManager::class.java)
-    clipboard?.setPrimaryClip(ClipData.newPlainText("clipboard_text", text))
+    clipboard?.setPrimaryClip(buildClipboardClipData(CLIPBRIDGE_HISTORY_LABEL, text))
     Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
 }
 
