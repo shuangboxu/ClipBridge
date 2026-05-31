@@ -15,6 +15,7 @@ import com.xushuangbo.clipbridge.feature.auth.AuthViewModel
 import com.xushuangbo.clipbridge.feature.bootstrap.BootstrapViewModel
 import com.xushuangbo.clipbridge.feature.bootstrap.SplashRoute
 import com.xushuangbo.clipbridge.feature.shell.DeviceViewModel
+import com.xushuangbo.clipbridge.feature.shell.FilesViewModel
 import com.xushuangbo.clipbridge.feature.shell.HistoryViewModel
 import com.xushuangbo.clipbridge.feature.shell.MainShellRoute
 import com.xushuangbo.clipbridge.feature.shell.SettingsViewModel
@@ -209,10 +210,20 @@ fun ClipBridgeApp(
                 ),
             )
 
+            // 文件页 ViewModel。
+            // 负责文件上传、分页查询、下载、重命名和删除。
+            val filesViewModel: FilesViewModel = viewModel(
+                factory = FilesViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    fileTransferCoordinator = resolvedContainer.fileTransferCoordinator,
+                ),
+            )
+
             MainShellRoute(
                 settingsViewModel = settingsViewModel,
                 deviceViewModel = deviceViewModel,
                 historyViewModel = historyViewModel,
+                filesViewModel = filesViewModel,
 
                 // 主界面里如果遇到 401、token 失效、退出登录等情况，
                 // 就跳转回 Auth 登录页。

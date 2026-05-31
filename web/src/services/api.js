@@ -1,47 +1,21 @@
 import { state, updateSessionTokens } from "../state/store.js";
 
 export async function request(path, options = {}) {
-    const baseUrl = normalizeServerBaseUrl(options.baseUrl || state.serverBaseUrl);
-    if (!baseUrl) {
-        throw new Error("服务地址未初始化。");
-    }
-
-    const headers = new Headers({
-        "Content-Type": "application/json"
-    });
-
-    if (options.withAuth !== false && state.session?.tokens?.access_token) {
-        headers.set("Authorization", `Bearer ${state.session.tokens.access_token}`);
-    }
-
-    let response;
-    try {
-        response = await fetch(`${baseUrl}${path}`, {
-            method: options.method || "GET",
-            headers,
-            body: options.body ? JSON.stringify(options.body) : undefined
-        });
-    } catch (error) {
-        throw new Error("无法连接服务。");
-    }
-
-    // access token 过期后，统一先走 refresh，再透明重试一次原请求。
-    if (response.status === 401 && options.withAuth !== false && !options._retry) {
-        const refreshed = await refreshSession();
-        if (refreshed) {
-            return request(path, {
-                ...options,
-                _retry: true
-            });
-        }
-    }
-
+    const response = await requestRaw(path, options);
     const payload = await parseJSON(response);
-    if (!response.ok || payload?.code !== 0) {
+    if (payload?.code !== 0) {
         throw buildAPIError(response.status, payload);
     }
-
     return payload.data || {};
+}
+
+export async function requestRaw(path, options = {}) {
+    const response = await send(path, options);
+    if (!response.ok) {
+        const payload = await parseJSON(response);
+        throw buildAPIError(response.status, payload);
+    }
+    return response;
 }
 
 export async function ensureValidAccessToken(minTTLSeconds = 60) {
@@ -82,6 +56,47 @@ async function refreshSession() {
 
 function normalizeServerBaseUrl(value) {
     return String(value || "").trim().replace(/\/+$/, "");
+}
+
+async function send(path, options = {}) {
+    const baseUrl = normalizeServerBaseUrl(options.baseUrl || state.serverBaseUrl);
+    if (!baseUrl) {
+        throw new Error("服务地址未初始化。");
+    }
+
+    const headers = new Headers(options.headers || {});
+    if (options.withAuth !== false && state.session?.tokens?.access_token) {
+        headers.set("Authorization", `Bearer ${state.session.tokens.access_token}`);
+    }
+
+    let body = options.body;
+    if (body && !(body instanceof FormData) && typeof body === "object" && !(body instanceof Blob) && !(body instanceof ArrayBuffer)) {
+        headers.set("Content-Type", "application/json");
+        body = JSON.stringify(body);
+    }
+
+    let response;
+    try {
+        response = await fetch(`${baseUrl}${path}`, {
+            method: options.method || "GET",
+            headers,
+            body
+        });
+    } catch (error) {
+        throw new Error("无法连接服务。");
+    }
+
+    if (response.status === 401 && options.withAuth !== false && !options._retry) {
+        const refreshed = await refreshSession();
+        if (refreshed) {
+            return send(path, {
+                ...options,
+                _retry: true
+            });
+        }
+    }
+
+    return response;
 }
 
 function parseJSON(response) {

@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.xushuangbo.clipbridge.ui.components.PageErrorBanner
 
@@ -34,6 +35,7 @@ internal fun SettingsScreen(
 ) {
     val accountEntries = listOf(
         SettingEntry("账号信息", DetailPage.AccountInfo),
+        SettingEntry("安全", DetailPage.Security),
         SettingEntry("设备", DetailPage.Device),
         SettingEntry("申请", DetailPage.Requests),
     )
@@ -91,8 +93,6 @@ internal fun AccountInfoScreen(
                 InfoRow("用户名", uiState.username.ifBlank { "未读取到账号信息" })
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                 InfoRow("设备名称", uiState.deviceName.ifBlank { "android-phone" })
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
-                InfoRow("设备 ID", uiState.currentDeviceId.ifBlank { "暂无设备 ID" })
             }
         }
 
@@ -116,6 +116,70 @@ internal fun AccountInfoScreen(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(if (uiState.isSavingServiceAddress) "保存中..." else "保存并重新登录")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SecurityScreen(
+    innerPadding: PaddingValues,
+    uiState: SettingsUiState,
+    onCurrentPasswordChange: (String) -> Unit,
+    onNewPasswordChange: (String) -> Unit,
+    onConfirmNewPasswordChange: (String) -> Unit,
+    onChangePassword: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(innerPadding)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+    ) {
+        uiState.errorMessage?.let { errorMessage ->
+            PageErrorBanner(message = errorMessage)
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+
+        Surface(shape = MaterialTheme.shapes.large, tonalElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
+                Text(text = "修改密码", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = uiState.currentPassword,
+                    onValueChange = onCurrentPasswordChange,
+                    singleLine = true,
+                    label = { Text("当前密码") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = uiState.newPassword,
+                    onValueChange = onNewPasswordChange,
+                    singleLine = true,
+                    label = { Text("新密码") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = uiState.confirmNewPassword,
+                    onValueChange = onConfirmNewPasswordChange,
+                    singleLine = true,
+                    label = { Text("确认新密码") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Button(
+                    onClick = onChangePassword,
+                    enabled = !uiState.isChangingPassword,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (uiState.isChangingPassword) "修改中..." else "更新密码")
                 }
             }
         }

@@ -53,6 +53,12 @@ data class ForceOfflineResult(
     val tokens: TokenBundle? = null,
 )
 
+data class ChangePasswordResult(
+    val userId: String,
+    val username: String,
+    val tokens: TokenBundle? = null,
+)
+
 interface AuthApiClient {
     suspend fun testConnection(baseUrl: String)
 
@@ -94,6 +100,13 @@ interface AuthApiClient {
         deviceId: String,
         onRefreshing: (() -> Unit)? = null,
     ): ForceOfflineResult
+
+    suspend fun changePassword(
+        session: StoredSession,
+        currentPassword: String,
+        newPassword: String,
+        onRefreshing: (() -> Unit)? = null,
+    ): ChangePasswordResult
 
     suspend fun logout(session: StoredSession)
 }
@@ -252,6 +265,32 @@ class HttpAuthApiClient(
         ForceOfflineResult(
             device = parseDeviceRecord(response.data.getJSONObject("device")),
             currentDeviceForcedOffline = response.data.optBoolean("current_device_forced_offline"),
+            tokens = response.tokens,
+        )
+    }
+
+    override suspend fun changePassword(
+        session: StoredSession,
+        currentPassword: String,
+        newPassword: String,
+        onRefreshing: (() -> Unit)?,
+    ): ChangePasswordResult = withContext(Dispatchers.IO) {
+        val requestBody = JSONObject()
+            .put("current_password", currentPassword)
+            .put("new_password", newPassword)
+
+        val response = requestAuthenticatedData(
+            session = session,
+            method = "POST",
+            path = "/v1/account/password",
+            jsonBody = requestBody,
+            onRefreshing = onRefreshing,
+        )
+
+        val userData = response.data.getJSONObject("user")
+        ChangePasswordResult(
+            userId = userData.optString("id"),
+            username = userData.optString("username"),
             tokens = response.tokens,
         )
     }

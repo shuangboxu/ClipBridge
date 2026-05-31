@@ -13,11 +13,13 @@ export const state = {
     },
     profile: null,
     devices: [],
+    files: createInitialFilesState(),
     clipboard: createInitialClipboardState(),
     clipboardPanel: {
         mode: "",
         itemId: ""
     },
+    filePanel: createInitialFilePanelState(),
     settingsModal: createInitialSettingsModalState(),
     devicePanel: {
         mode: "",
@@ -34,6 +36,8 @@ export const state = {
 export function setSession(session) {
     state.session = session;
     state.profile = null;
+    state.files = createInitialFilesState();
+    closeFilePanel();
     state.clipboard = createInitialClipboardState();
     closeClipboardPanel();
     closeSettingsModal();
@@ -84,6 +88,8 @@ export function updateSessionUser(user) {
 
 export function clearSession() {
     state.session = null;
+    state.files = createInitialFilesState();
+    closeFilePanel();
     state.clipboard = createInitialClipboardState();
     closeClipboardPanel();
     closeSettingsModal();
@@ -129,11 +135,23 @@ export function openClipboardPanel(mode, item) {
     };
 }
 
+export function openFilePanel(mode, file) {
+    state.filePanel = {
+        mode,
+        fileId: file?.id || "",
+        renameDraftName: file?.original_name || ""
+    };
+}
+
 export function closeClipboardPanel() {
     state.clipboardPanel = {
         mode: "",
         itemId: ""
     };
+}
+
+export function closeFilePanel() {
+    state.filePanel = createInitialFilePanelState();
 }
 
 export function openSettingsModal(category = "general") {
@@ -210,6 +228,27 @@ function createInitialClipboardState() {
         wsLastEventAt: "",
         wsLastHeartbeatAt: "",
         wsReconnectAttempt: 0
+    };
+}
+
+function createInitialFilesState() {
+    return {
+        selectedUploadName: "",
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+        totalBytes: 0,
+        maxUploadBytes: 0
+    };
+}
+
+function createInitialFilePanelState() {
+    return {
+        mode: "",
+        fileId: "",
+        renameDraftName: ""
     };
 }
 

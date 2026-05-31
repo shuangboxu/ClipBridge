@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"strings"
 
 	"clipbridge/backend/internal/app"
 	"clipbridge/backend/internal/httpapi/handlers"
@@ -16,6 +17,7 @@ func New(application *app.App) http.Handler {
 	accountHandler := handlers.NewAccountHandler(application)
 	deviceHandler := handlers.NewDeviceHandler(application)
 	clipboardHandler := handlers.NewClipboardHandler(application)
+	fileHandler := handlers.NewFileHandler(application)
 	syncHandler := handlers.NewSyncHandler(application)
 	wsHandler := handlers.NewWSHandler(application)
 
@@ -35,6 +37,11 @@ func New(application *app.App) http.Handler {
 	protectedForceOfflineDevice := middleware.Auth(application.AuthService)(http.HandlerFunc(deviceHandler.ForceOffline))
 	protectedCreateClipboardItem := middleware.Auth(application.AuthService)(http.HandlerFunc(clipboardHandler.CreateItem))
 	protectedListClipboardItems := middleware.Auth(application.AuthService)(http.HandlerFunc(clipboardHandler.ListItems))
+	protectedUploadFile := middleware.Auth(application.AuthService)(http.HandlerFunc(fileHandler.Upload))
+	protectedListFiles := middleware.Auth(application.AuthService)(http.HandlerFunc(fileHandler.List))
+	protectedDownloadFile := middleware.Auth(application.AuthService)(http.HandlerFunc(fileHandler.Download))
+	protectedRenameFile := middleware.Auth(application.AuthService)(http.HandlerFunc(fileHandler.Rename))
+	protectedDeleteFile := middleware.Auth(application.AuthService)(http.HandlerFunc(fileHandler.Delete))
 	protectedPullSync := middleware.Auth(application.AuthService)(http.HandlerFunc(syncHandler.Pull))
 	protectedAckSync := middleware.Auth(application.AuthService)(http.HandlerFunc(syncHandler.Ack))
 
@@ -47,6 +54,11 @@ func New(application *app.App) http.Handler {
 	router.Handle(http.MethodPost, "/v1/devices/offline", protectedForceOfflineDevice)
 	router.Handle(http.MethodPost, "/v1/clipboard/items", protectedCreateClipboardItem)
 	router.Handle(http.MethodGet, "/v1/clipboard/items", protectedListClipboardItems)
+	router.Handle(http.MethodPost, "/v1/files", protectedUploadFile)
+	router.Handle(http.MethodGet, "/v1/files", protectedListFiles)
+	router.Handle(http.MethodGet, "/v1/files/:id/download", protectedDownloadFile)
+	router.Handle(http.MethodPatch, "/v1/files/:id", protectedRenameFile)
+	router.Handle(http.MethodDelete, "/v1/files/:id", protectedDeleteFile)
 	router.Handle(http.MethodGet, "/v1/sync/pull", protectedPullSync)
 	router.Handle(http.MethodPost, "/v1/sync/ack", protectedAckSync)
 	router.Handle(http.MethodGet, "/v1/ws", http.HandlerFunc(wsHandler.Connect))
@@ -66,34 +78,87 @@ func New(application *app.App) http.Handler {
 }
 
 type simpleRouter struct {
-	routes map[string]map[string]http.Handler
+	routes []route
 }
 
 func newSimpleRouter() *simpleRouter {
 	return &simpleRouter{
-		routes: make(map[string]map[string]http.Handler),
+		routes: make([]route, 0),
 	}
 }
 
 func (r *simpleRouter) Handle(method, path string, handler http.Handler) {
-	if r.routes[path] == nil {
-		r.routes[path] = make(map[string]http.Handler)
-	}
-	r.routes[path][method] = handler
+	r.routes = append(r.routes, route{
+		method:   method,
+		path:     path,
+		segments: splitPath(path),
+		handler:  handler,
+	})
 }
 
 func (r *simpleRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	methodMap, ok := r.routes[req.URL.Path]
-	if !ok {
-		response.Error(w, req, http.StatusNotFound, "route not found")
+	requestSegments := splitPath(req.URL.Path)
+	var methodNotAllowed bool
+
+	for _, route := range r.routes {
+		pathValues, matched := matchPath(route.segments, requestSegments)
+		if !matched {
+			continue
+		}
+
+		if route.method != req.Method {
+			methodNotAllowed = true
+			continue
+		}
+
+		for key, value := range pathValues {
+			req.SetPathValue(key, value)
+		}
+		route.handler.ServeHTTP(w, req)
 		return
 	}
 
-	handler, ok := methodMap[req.Method]
-	if !ok {
+	if methodNotAllowed {
 		response.Error(w, req, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	response.Error(w, req, http.StatusNotFound, "route not found")
+}
 
-	handler.ServeHTTP(w, req)
+type route struct {
+	method   string
+	path     string
+	segments []string
+	handler  http.Handler
+}
+
+func splitPath(path string) []string {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
+}
+
+func matchPath(routeSegments, requestSegments []string) (map[string]string, bool) {
+	if len(routeSegments) != len(requestSegments) {
+		return nil, false
+	}
+
+	pathValues := make(map[string]string)
+	for index, segment := range routeSegments {
+		requestSegment := requestSegments[index]
+		if strings.HasPrefix(segment, ":") {
+			name := strings.TrimPrefix(segment, ":")
+			if name == "" || requestSegment == "" {
+				return nil, false
+			}
+			pathValues[name] = requestSegment
+			continue
+		}
+		if segment != requestSegment {
+			return nil, false
+		}
+	}
+	return pathValues, true
 }

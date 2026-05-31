@@ -50,25 +50,6 @@ internal fun RequestScreen(
 }
 
 @Composable
-internal fun FilesScreen(
-    innerPadding: PaddingValues,
-    onPendingFeatureClick: (String) -> Unit,
-) {
-    val fileEntries = listOf(
-        ActionEntry("上传文件", Icons.Outlined.Folder),
-        ActionEntry("接收记录", Icons.Outlined.Description),
-        ActionEntry("分享文件", Icons.Outlined.Share),
-    )
-
-    PageWithActionGroup(
-        innerPadding = innerPadding,
-        title = "文件中心",
-        entries = fileEntries,
-        onEntryClick = onPendingFeatureClick,
-    )
-}
-
-@Composable
 internal fun ShareScreen(
     innerPadding: PaddingValues,
     onPendingFeatureClick: (String) -> Unit,

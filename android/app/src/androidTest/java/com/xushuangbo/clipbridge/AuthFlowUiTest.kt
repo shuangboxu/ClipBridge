@@ -17,6 +17,7 @@ import com.xushuangbo.clipbridge.app.AppTestTags
 import com.xushuangbo.clipbridge.app.ClipBridgeApp
 import com.xushuangbo.clipbridge.core.network.AuthApiClient
 import com.xushuangbo.clipbridge.core.network.AuthResult
+import com.xushuangbo.clipbridge.core.network.ChangePasswordResult
 import com.xushuangbo.clipbridge.core.network.ClipboardApiClient
 import com.xushuangbo.clipbridge.core.network.ClipboardHistoryResult
 import com.xushuangbo.clipbridge.core.network.ClipboardItem
@@ -283,6 +284,15 @@ private class FakeUiAuthApiClient(
         onRefreshing: (() -> Unit)?,
     ): ForceOfflineResult {
         error("forceOfflineDevice should not be called in this test")
+    }
+
+    override suspend fun changePassword(
+        session: StoredSession,
+        currentPassword: String,
+        newPassword: String,
+        onRefreshing: (() -> Unit)?,
+    ): ChangePasswordResult {
+        error("changePassword should not be called in this test")
     }
 
     override suspend fun logout(session: StoredSession) = Unit

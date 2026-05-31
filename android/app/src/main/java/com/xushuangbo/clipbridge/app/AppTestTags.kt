@@ -15,4 +15,7 @@ object AppTestTags {
     const val HistoryDraftField = "history_draft_field"
     const val HistoryUploadButton = "history_upload_button"
     const val HistoryRefreshButton = "history_refresh_button"
+    const val FilesScreen = "files_screen"
+    const val FilesUploadButton = "files_upload_button"
+    const val FilesRefreshButton = "files_refresh_button"
 }

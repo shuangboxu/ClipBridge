@@ -10,7 +10,7 @@ export const NAV_ITEMS = [
     { route: "dashboard", title: "总览", icon: "dashboard", ready: true },
     { route: "history", title: "历史", icon: "history", ready: true },
     { route: "devices", title: "设备", icon: "devices", ready: true },
-    { route: "files", title: "文件", icon: "files", ready: false },
+    { route: "files", title: "文件", icon: "files", ready: true },
     { route: "shares", title: "分享", icon: "shares", ready: false },
     { route: "requests", title: "申请", icon: "requests", ready: false },
     { route: "admin", title: "管理", icon: "admin", ready: false },

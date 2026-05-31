@@ -15,6 +15,7 @@ fun MainShellRoute(
     settingsViewModel: SettingsViewModel = viewModel(),
     deviceViewModel: DeviceViewModel = viewModel(),
     historyViewModel: HistoryViewModel = viewModel(),
+    filesViewModel: FilesViewModel = viewModel(),
     onRequireAuth: (String) -> Unit,
 ) {
     val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
@@ -45,6 +46,17 @@ fun MainShellRoute(
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
+    LaunchedEffect(filesViewModel) {
+        filesViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
+            onRequireAuth(message)
+        }
+    }
+    LaunchedEffect(filesViewModel, context) {
+        filesViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     SyncRuntimeEffect(
         syncEnabled = settingsUiState.syncEnabled,
@@ -55,10 +67,15 @@ fun MainShellRoute(
         settingsUiState = settingsUiState,
         deviceUiState = deviceUiState,
         historyViewModel = historyViewModel,
+        filesViewModel = filesViewModel,
         onRequireAuth = onRequireAuth,
         onToggleSync = settingsViewModel::toggleSyncEnabled,
         onServiceAddressChange = settingsViewModel::updateServiceAddress,
         onSaveServiceAddress = settingsViewModel::saveServiceAddress,
+        onCurrentPasswordChange = settingsViewModel::updateCurrentPassword,
+        onNewPasswordChange = settingsViewModel::updateNewPassword,
+        onConfirmNewPasswordChange = settingsViewModel::updateConfirmNewPassword,
+        onChangePassword = settingsViewModel::changePassword,
         onLogout = settingsViewModel::logout,
         onLoadDevices = deviceViewModel::ensureLoaded,
         onRefreshDevices = deviceViewModel::refreshDevices,
@@ -76,10 +93,15 @@ fun MainShell(
     settingsUiState: SettingsUiState,
     deviceUiState: DeviceUiState,
     historyViewModel: HistoryViewModel,
+    filesViewModel: FilesViewModel,
     onRequireAuth: (String) -> Unit,
     onToggleSync: () -> Unit,
     onServiceAddressChange: (String) -> Unit,
     onSaveServiceAddress: () -> Unit,
+    onCurrentPasswordChange: (String) -> Unit,
+    onNewPasswordChange: (String) -> Unit,
+    onConfirmNewPasswordChange: (String) -> Unit,
+    onChangePassword: () -> Unit,
     onLogout: () -> Unit,
     onLoadDevices: () -> Unit,
     onRefreshDevices: () -> Unit,
@@ -94,10 +116,15 @@ fun MainShell(
         settingsUiState = settingsUiState,
         deviceUiState = deviceUiState,
         historyViewModel = historyViewModel,
+        filesViewModel = filesViewModel,
         onRequireAuth = onRequireAuth,
         onToggleSync = onToggleSync,
         onServiceAddressChange = onServiceAddressChange,
         onSaveServiceAddress = onSaveServiceAddress,
+        onCurrentPasswordChange = onCurrentPasswordChange,
+        onNewPasswordChange = onNewPasswordChange,
+        onConfirmNewPasswordChange = onConfirmNewPasswordChange,
+        onChangePassword = onChangePassword,
         onLogout = onLogout,
         onLoadDevices = onLoadDevices,
         onRefreshDevices = onRefreshDevices,

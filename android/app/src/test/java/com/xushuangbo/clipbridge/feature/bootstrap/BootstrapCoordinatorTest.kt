@@ -3,6 +3,7 @@ package com.xushuangbo.clipbridge.feature.bootstrap
 import com.xushuangbo.clipbridge.core.network.AuthApiClient
 import com.xushuangbo.clipbridge.core.network.AuthApiException
 import com.xushuangbo.clipbridge.core.network.AuthResult
+import com.xushuangbo.clipbridge.core.network.ChangePasswordResult
 import com.xushuangbo.clipbridge.core.network.DeviceListResult
 import com.xushuangbo.clipbridge.core.network.DeviceMutationResult
 import com.xushuangbo.clipbridge.core.network.ForceOfflineResult
@@ -231,6 +232,15 @@ private class FakeAuthApiClient(
         onRefreshing: (() -> Unit)?,
     ): ForceOfflineResult {
         error("forceOfflineDevice should not be called in bootstrap tests")
+    }
+
+    override suspend fun changePassword(
+        session: StoredSession,
+        currentPassword: String,
+        newPassword: String,
+        onRefreshing: (() -> Unit)?,
+    ): ChangePasswordResult {
+        error("changePassword should not be called in bootstrap tests")
     }
 
     override suspend fun logout(session: StoredSession) = Unit

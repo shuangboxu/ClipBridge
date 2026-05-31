@@ -70,6 +70,7 @@ internal enum class DetailPage(val title: String) {
     Scan("扫一扫"),
     Share("分享"),
     AccountInfo("账号信息"),
+    Security("安全"),
     Device("设备"),
     Requests("申请"),
     GlobalSettings("全局设置"),
@@ -82,10 +83,15 @@ internal fun ShellScaffold(
     settingsUiState: SettingsUiState,
     deviceUiState: DeviceUiState,
     historyViewModel: HistoryViewModel,
+    filesViewModel: FilesViewModel,
     onRequireAuth: (String) -> Unit,
     onToggleSync: () -> Unit,
     onServiceAddressChange: (String) -> Unit,
     onSaveServiceAddress: () -> Unit,
+    onCurrentPasswordChange: (String) -> Unit,
+    onNewPasswordChange: (String) -> Unit,
+    onConfirmNewPasswordChange: (String) -> Unit,
+    onChangePassword: () -> Unit,
     onLogout: () -> Unit,
     onLoadDevices: () -> Unit,
     onRefreshDevices: () -> Unit,
@@ -101,15 +107,12 @@ internal fun ShellScaffold(
     var homeMenuExpanded by rememberSaveable { mutableStateOf(false) }
     var historySearchQuery by rememberSaveable { mutableStateOf("") }
     var historyUploadDialogVisible by rememberSaveable { mutableStateOf(false) }
+    var filesUploadRequestVersion by rememberSaveable { mutableStateOf(0) }
     var pendingHistoryShortcutAction by remember { mutableStateOf<HistoryShortcutAction?>(null) }
     val context = LocalContext.current
 
     // 主页面的快捷入口只负责把用户送到正确页面，具体业务仍然由对应页面处理。
     val homeShortcuts = listOf(
-        HomeShortcut("上传文本", Icons.Outlined.CloudUpload, targetTab = MainTab.History, historyAction = HistoryShortcutAction.OpenUpload),
-        HomeShortcut("拉取历史", Icons.Outlined.CloudDownload, targetTab = MainTab.History, historyAction = HistoryShortcutAction.PullRemote),
-        HomeShortcut("设备", Icons.Outlined.Devices, detailPage = DetailPage.Device),
-        HomeShortcut("AI", Icons.Outlined.AutoAwesome, targetTab = MainTab.Ai),
         HomeShortcut("文件", Icons.Outlined.Folder, detailPage = DetailPage.Files),
         HomeShortcut("分享", Icons.Outlined.Share, detailPage = DetailPage.Share),
     )
@@ -195,6 +198,25 @@ internal fun ShellScaffold(
                                 contentDescription = "刷新历史",
                             )
                         }
+                    } else if (currentDetailPage == DetailPage.Files) {
+                        IconButton(
+                            onClick = { filesUploadRequestVersion += 1 },
+                            modifier = Modifier.testTag(AppTestTags.FilesUploadButton),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.CloudUpload,
+                                contentDescription = "上传文件",
+                            )
+                        }
+                        IconButton(
+                            onClick = { filesViewModel.refreshFiles() },
+                            modifier = Modifier.testTag(AppTestTags.FilesRefreshButton),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "刷新文件列表",
+                            )
+                        }
                     }
                 },
             )
@@ -216,7 +238,11 @@ internal fun ShellScaffold(
         },
     ) { innerPadding: PaddingValues ->
         when (currentDetailPage) {
-            DetailPage.Files -> FilesScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
+            DetailPage.Files -> FilesScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = filesViewModel,
+                uploadRequestVersion = filesUploadRequestVersion,
+            )
             DetailPage.Scan -> ScanScreen(innerPadding = innerPadding)
             DetailPage.Share -> ShareScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
             DetailPage.AccountInfo -> AccountInfoScreen(
@@ -224,6 +250,14 @@ internal fun ShellScaffold(
                 uiState = settingsUiState,
                 onServiceAddressChange = onServiceAddressChange,
                 onSaveServiceAddress = onSaveServiceAddress,
+            )
+            DetailPage.Security -> SecurityScreen(
+                innerPadding = innerPadding,
+                uiState = settingsUiState,
+                onCurrentPasswordChange = onCurrentPasswordChange,
+                onNewPasswordChange = onNewPasswordChange,
+                onConfirmNewPasswordChange = onConfirmNewPasswordChange,
+                onChangePassword = onChangePassword,
             )
             DetailPage.Device -> DeviceScreenRoute(
                 innerPadding = innerPadding,

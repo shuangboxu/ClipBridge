@@ -14,9 +14,14 @@
 - 历史记录查询
 - 同步补拉
 - ACK
+- 文件上传
+- 文件列表查询
+- 文件下载
+- 文件重命名
+- 文件删除
 - WebSocket 实时推送
 
-后续随着文本同步、文件、分享、管理员能力逐步完成，再继续补充。
+后续随着分享、管理员能力逐步完成，再继续补充。
 
 当前线上默认已关闭公开注册。
 如果后续需要重新开放，需把 `AUTH_ALLOW_REGISTRATION` 改成 `true` 后重启服务。
@@ -554,7 +559,127 @@ Content-Type: application/json
 - ACK 会把当前设备的 `last_ack_seq` 推进到更大的值
 - 服务端会自动用 `GREATEST` 保护，避免 ACK 倒退
 
-### 3.15 WebSocket 实时推送
+### 3.15 文件上传
+
+```http
+POST /v1/files
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+- `file`
+  - 必填
+  - 字段名固定就是 `file`
+
+说明：
+
+- 文件体走流式写入，不需要先整块读进内存
+- 单文件默认上限是 `64MB`
+- 服务端会记录：
+  - 原始文件名
+  - MIME 类型
+  - 文件大小
+  - SHA256
+  - 来源设备 ID
+  - 来源设备名快照
+
+成功返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "file": {
+      "id": "f3a6bc7b-6c33-4c08-a7f9-cf0dc7830b64",
+      "original_name": "report.pdf",
+      "content_type": "application/pdf",
+      "size_bytes": 24576,
+      "file_sha256": "7d8c0f...",
+      "origin_device_id": "8a17fd87-50a2-4cd3-aabc-1d9d2c08f944",
+      "origin_device_name": "Chrome on Windows",
+      "created_at": "2026-05-31T09:20:00Z"
+    }
+  },
+  "request_id": "8f6c99f1c2d14b77"
+}
+```
+
+常见失败：
+
+- `400 multipart/form-data is required`
+- `400 file field is required`
+- `400 file name is required`
+- `413 file is too large`
+
+### 3.16 文件列表查询
+
+```http
+GET /v1/files?page=1&page_size=20
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 按 `created_at DESC` 返回最新上传的文件
+- `page` 和 `page_size` 都是可选
+- `page_size` 默认 `20`，最大 `100`
+
+响应里的 `summary` 结构：
+
+- `total_files`
+- `total_bytes`
+- `max_upload_bytes`
+
+### 3.17 文件下载
+
+```http
+GET /v1/files/{id}/download
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 成功时直接返回文件二进制流
+- `Content-Disposition` 会带上原始文件名
+- 如果元数据存在但磁盘文件丢失，会返回 `404 file body not found`
+
+### 3.18 文件重命名
+
+```http
+PATCH /v1/files/{id}
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "original_name": "new-report.pdf"
+}
+```
+
+说明：
+
+- 这里只改数据库里的显示名称
+- 不会移动磁盘文件，也不会改 `stored_path`
+
+### 3.19 文件删除
+
+```http
+DELETE /v1/files/{id}
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 服务端会先删数据库记录，再尝试删磁盘文件
+- 响应里的 `disk_removed=false` 表示记录删掉了，但磁盘文件清理失败，需要后续人工排查
+
+### 3.20 WebSocket 实时推送
 
 连接方式：
 
@@ -598,7 +723,7 @@ GET /v1/ws?access_token=<access_token>
 - `sync.heartbeat` 当前默认每 `20` 秒发送一次
 - Web 端建议在检测到序号缺口时立刻回退到 `GET /v1/sync/pull`
 
-### 3.16 受保护示例接口
+### 3.21 受保护示例接口
 
 ```http
 GET /v1/system/profile
@@ -614,10 +739,9 @@ Authorization: Bearer <access_token>
 - 登录、刷新、退出登录
 - 当前账号信息与设备管理
 - 文本上传、历史查询、补拉、ACK
+- 文件上传、列表、下载、重命名、删除
 - WebSocket 实时推送
 
 当前仍未实现：
 
-- 修改密码
-- 文件同步
 - 分享与管理员能力

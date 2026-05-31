@@ -14,6 +14,7 @@ type Config struct {
 	Database DatabaseConfig
 	Auth     AuthConfig
 	CORS     CORSConfig
+	Files    FileStorageConfig
 }
 
 type ServerConfig struct {
@@ -43,6 +44,11 @@ type AuthConfig struct {
 
 type CORSConfig struct {
 	AllowOrigins []string
+}
+
+type FileStorageConfig struct {
+	StorageDir     string
+	MaxUploadBytes int64
 }
 
 func Load() (Config, error) {
@@ -78,6 +84,10 @@ func Load() (Config, error) {
 		},
 		CORS: CORSConfig{
 			AllowOrigins: splitCSV(getEnv("CORS_ALLOW_ORIGINS", "*")),
+		},
+		Files: FileStorageConfig{
+			StorageDir:     getEnv("FILE_STORAGE_DIR", "data/uploads"),
+			MaxUploadBytes: int64(getEnvInt("FILE_MAX_UPLOAD_MB", 64)) * 1024 * 1024,
 		},
 	}
 
@@ -140,6 +150,12 @@ func (c Config) Validate() error {
 	}
 	if c.Auth.RefreshTokenTTL <= 0 {
 		return errors.New("REFRESH_TOKEN_TTL_HOURS must be greater than 0")
+	}
+	if strings.TrimSpace(c.Files.StorageDir) == "" {
+		return errors.New("FILE_STORAGE_DIR cannot be empty")
+	}
+	if c.Files.MaxUploadBytes <= 0 {
+		return errors.New("FILE_MAX_UPLOAD_MB must be greater than 0")
 	}
 	return nil
 }

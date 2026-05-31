@@ -123,10 +123,26 @@ export function renderIcon(name) {
                 <path d="M5 19h14"></path>
             </svg>
         `,
+        download: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v11"></path>
+                <path d="M8 12l4 4 4-4"></path>
+                <path d="M5 19h14"></path>
+            </svg>
+        `,
         copy: `
             <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="9" y="9" width="11" height="11" rx="2"></rect>
                 <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+            </svg>
+        `,
+        trash: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16"></path>
+                <path d="M10 11v6"></path>
+                <path d="M14 11v6"></path>
+                <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"></path>
+                <path d="M9 7V4h6v3"></path>
             </svg>
         `,
         logout: `

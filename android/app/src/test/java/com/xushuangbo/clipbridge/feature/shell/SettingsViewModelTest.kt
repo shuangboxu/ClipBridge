@@ -2,7 +2,9 @@ package com.xushuangbo.clipbridge.feature.shell
 
 import com.xushuangbo.clipbridge.MainDispatcherRule
 import com.xushuangbo.clipbridge.core.network.AuthApiClient
+import com.xushuangbo.clipbridge.core.network.AuthApiException
 import com.xushuangbo.clipbridge.core.network.AuthResult
+import com.xushuangbo.clipbridge.core.network.ChangePasswordResult
 import com.xushuangbo.clipbridge.core.network.DeviceListResult
 import com.xushuangbo.clipbridge.core.network.DeviceMutationResult
 import com.xushuangbo.clipbridge.core.network.ForceOfflineResult
@@ -13,6 +15,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 
@@ -52,6 +55,56 @@ class SettingsViewModelTest {
         assertEquals("", sessionStore.readSession().accessToken)
         assertEquals("", sessionStore.readSession().refreshToken)
         assertEquals(0L, sessionStore.readLastAckSeq())
+    }
+
+    @Test
+    fun changePassword_successClearsFormAndUpdatesTokens() = runTest {
+        val sessionStore = FakeSettingsSessionStore()
+        val viewModel = SettingsViewModel(
+            sessionStore = sessionStore,
+            authApiClient = FakeSettingsAuthApiClient(
+                changePasswordResult = ChangePasswordResult(
+                    userId = "user-1",
+                    username = "alice",
+                    tokens = TokenBundle("access-2", "refresh-2"),
+                ),
+            ),
+        )
+
+        viewModel.updateCurrentPassword("password123")
+        viewModel.updateNewPassword("new-password-456")
+        viewModel.updateConfirmNewPassword("new-password-456")
+        viewModel.changePassword()
+        advanceUntilIdle()
+
+        assertEquals("", viewModel.uiState.value.currentPassword)
+        assertEquals("", viewModel.uiState.value.newPassword)
+        assertEquals("", viewModel.uiState.value.confirmNewPassword)
+        assertEquals("access-2", sessionStore.readSession().accessToken)
+        assertEquals("refresh-2", sessionStore.readSession().refreshToken)
+        assertFalse(viewModel.uiState.value.isChangingPassword)
+    }
+
+    @Test
+    fun changePassword_withWrongCurrentPasswordShowsError() = runTest {
+        val viewModel = SettingsViewModel(
+            sessionStore = FakeSettingsSessionStore(),
+            authApiClient = FakeSettingsAuthApiClient(
+                changePasswordError = AuthApiException(
+                    httpCode = 401,
+                    message = "current password is incorrect",
+                ),
+            ),
+        )
+
+        viewModel.updateCurrentPassword("wrong-password")
+        viewModel.updateNewPassword("new-password-456")
+        viewModel.updateConfirmNewPassword("new-password-456")
+        viewModel.changePassword()
+        advanceUntilIdle()
+
+        assertEquals("当前密码不正确", viewModel.uiState.value.errorMessage)
+        assertFalse(viewModel.uiState.value.isChangingPassword)
     }
 }
 
@@ -127,7 +180,15 @@ private class FakeSettingsSessionStore(
     }
 }
 
-private class FakeSettingsAuthApiClient : AuthApiClient {
+private class FakeSettingsAuthApiClient(
+    private val changePasswordResult: ChangePasswordResult = ChangePasswordResult(
+        userId = "user-1",
+        username = "alice",
+        tokens = null,
+    ),
+    private val changePasswordError: Exception? = null,
+) : AuthApiClient {
+
     override suspend fun testConnection(baseUrl: String) = Unit
 
     override suspend fun register(
@@ -168,6 +229,16 @@ private class FakeSettingsAuthApiClient : AuthApiClient {
         deviceId: String,
         onRefreshing: (() -> Unit)?,
     ): ForceOfflineResult = error("unused")
+
+    override suspend fun changePassword(
+        session: StoredSession,
+        currentPassword: String,
+        newPassword: String,
+        onRefreshing: (() -> Unit)?,
+    ): ChangePasswordResult {
+        changePasswordError?.let { throw it }
+        return changePasswordResult
+    }
 
     override suspend fun logout(session: StoredSession) = Unit
 }

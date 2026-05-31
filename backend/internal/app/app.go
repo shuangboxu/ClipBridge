@@ -9,6 +9,8 @@ import (
 	"clipbridge/backend/internal/clipboard"
 	"clipbridge/backend/internal/config"
 	"clipbridge/backend/internal/database"
+	"clipbridge/backend/internal/files"
+	"clipbridge/backend/internal/filestore"
 	"clipbridge/backend/internal/realtime"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -24,6 +26,7 @@ type App struct {
 	TokenManager     *auth.Manager
 	AuthService      *auth.Service
 	ClipboardService *clipboard.Service
+	FileService      *files.Service
 	RealtimeHub      *realtime.Hub
 }
 
@@ -47,6 +50,12 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	tokenManager := auth.NewManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL)
 	authRepo := auth.NewPostgresRepository(pool)
 	clipboardRepo := clipboard.NewPostgresRepository(pool)
+	fileRepo := files.NewPostgresRepository(pool)
+	fileStore := filestore.NewLocalStore(cfg.Files.StorageDir)
+	if err := fileStore.EnsureBaseDir(); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("ensure file storage dir failed: %w", err)
+	}
 
 	return &App{
 		Config:           cfg,
@@ -54,6 +63,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		TokenManager:     tokenManager,
 		AuthService:      auth.NewService(authRepo, tokenManager, cfg.Auth.RefreshTokenTTL),
 		ClipboardService: clipboard.NewService(clipboardRepo),
+		FileService:      files.NewService(fileRepo, fileStore, cfg.Files.MaxUploadBytes),
 		RealtimeHub:      realtime.NewHub(),
 	}, nil
 }

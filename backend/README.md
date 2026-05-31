@@ -22,6 +22,11 @@
 - 设备列表接口
 - 修改设备名接口
 - 强制下线设备接口
+- 文件上传接口
+- 文件列表接口
+- 文件下载接口
+- 文件重命名接口
+- 文件删除接口
 
 ## 目录说明
 
@@ -35,6 +40,8 @@ backend/
 │  ├─ auth/         账号认证、密码处理、Token 与认证业务层
 │  ├─ config/       环境变量和 .env 加载
 │  ├─ database/     PostgreSQL 连接与迁移
+│  ├─ files/        文件中转业务层与仓储层
+│  ├─ filestore/    本地磁盘文件存储
 │  ├─ id/           UUID 生成等基础 ID 工具
 │  └─ httpapi/      路由、处理中间件、响应格式、处理器
 └─ .env.example
@@ -61,6 +68,8 @@ cp .env.example .env
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `REFRESH_TOKEN_TTL_HOURS`
+- `FILE_STORAGE_DIR`
+- `FILE_MAX_UPLOAD_MB`
 
 ## 启动服务
 
@@ -151,6 +160,24 @@ Authorization: Bearer <access_token>
 
 这个接口会继续保留，方便开发时快速确认 access token 和鉴权中间件是否正常工作。
 
+### 7. 文件中转接口
+
+```http
+POST   /v1/files
+GET    /v1/files
+GET    /v1/files/:id/download
+PATCH  /v1/files/:id
+DELETE /v1/files/:id
+```
+
+说明：
+
+- 上传走 `multipart/form-data`
+- 字段名固定为 `file`
+- 默认单文件上限是 `64MB`
+- 文件体保存到 `FILE_STORAGE_DIR`
+- 服务端会额外记录来源设备 ID、来源设备名快照、SHA256 和 MIME 类型
+
 ## 生成测试 Token
 
 当前仍然保留开发期命令来生成测试 token：
@@ -179,7 +206,7 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:18080/v1/system/profile
 
 ## 当前阶段的限制
 
-- 还没有文件同步、分享、管理员能力
+- 还没有分享、管理员能力
 - 当前文本同步阶段只支持 `text`，还没有图片与文件内容
 
 这些会在路线图后续步骤继续补上。

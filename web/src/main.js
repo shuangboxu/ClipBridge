@@ -1,8 +1,9 @@
 import { AUTH_ROUTE, DEFAULT_ROUTE, PROTECTED_ROUTES } from "./config/app.js";
 import { renderApp } from "./render/layout.js";
-import { ensureValidAccessToken, request } from "./services/api.js";
+import { ensureValidAccessToken, request, requestRaw } from "./services/api.js";
 import {
     clearPending,
+    closeFilePanel,
     clearSettingsPasswordForm,
     clearSession,
     closeSettingsModal,
@@ -10,6 +11,7 @@ import {
     closeDevicePanel,
     isPending,
     openClipboardPanel,
+    openFilePanel,
     openSettingsModal,
     openDevicePanel,
     saveSidebarCollapsed,
@@ -87,6 +89,14 @@ function registerEventListeners() {
             case "clipboard-upload-form":
                 event.preventDefault();
                 void handleClipboardUpload(form);
+                return;
+            case "file-upload-form":
+                event.preventDefault();
+                void handleFileUpload(form);
+                return;
+            case "file-rename-form":
+                event.preventDefault();
+                void handleFileRenameSubmit(form);
                 return;
             case "password-change-form":
                 event.preventDefault();
@@ -170,6 +180,35 @@ function registerEventListeners() {
                 closeClipboardPanel();
                 render();
                 break;
+            case "reload-files":
+                void loadFiles({ silent: false });
+                break;
+            case "open-file-upload":
+                openFilePanel("upload");
+                render();
+                break;
+            case "open-file-details":
+                handleOpenFilePanel("details", target.getAttribute("data-file-id") || "");
+                break;
+            case "open-file-rename":
+                handleOpenFilePanel("rename", target.getAttribute("data-file-id") || "");
+                break;
+            case "close-file-panel":
+                closeFilePanel();
+                render();
+                break;
+            case "download-file":
+                void handleFileDownload(target.getAttribute("data-file-id") || "");
+                break;
+            case "delete-file":
+                void handleFileDelete(target.getAttribute("data-file-id") || "");
+                break;
+            case "files-prev":
+                void handleFilesPrev();
+                break;
+            case "files-next":
+                void handleFilesNext();
+                break;
             case "force-device-offline":
                 void handleForceDeviceOffline(target.getAttribute("data-device-id") || "");
                 break;
@@ -218,6 +257,9 @@ async function handleRouteChange() {
     if (state.route !== "history") {
         closeClipboardPanel();
     }
+    if (state.route !== "files") {
+        closeFilePanel();
+    }
 
     if (PROTECTED_ROUTES.has(state.route) && !state.session) {
         disconnectRealtime();
@@ -228,7 +270,7 @@ async function handleRouteChange() {
     }
 
     if (state.session) {
-        if (state.route === "devices" || state.route === "history") {
+        if (state.route === "devices" || state.route === "history" || state.route === "files") {
             state.isBootstrapping = true;
             render();
         }
@@ -250,6 +292,9 @@ async function handleRouteChange() {
         }
         if (state.route === "history") {
             await loadClipboardHistory({ silent: true });
+        }
+        if (state.route === "files") {
+            await loadFiles({ silent: true });
         }
     } else if (state.route !== AUTH_ROUTE) {
         navigate(AUTH_ROUTE);
@@ -467,6 +512,55 @@ async function loadDevices(options = {}) {
     }
 }
 
+async function loadFiles(options = {}) {
+    if (!state.session) {
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("files");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const query = new URLSearchParams({
+            page: String(state.files.page),
+            page_size: String(state.files.pageSize)
+        });
+        const data = await request(`/v1/files?${query.toString()}`);
+        const pagination = data.pagination || {};
+        const summary = data.summary || {};
+        const items = Array.isArray(data.files) ? data.files : [];
+
+        state.files.items = items;
+        state.files.page = Number(pagination.page || state.files.page || 1);
+        state.files.pageSize = Number(pagination.page_size || state.files.pageSize || 20);
+        state.files.total = Number(pagination.total || 0);
+        state.files.totalPages = Number(pagination.total_pages || 0);
+        state.files.totalBytes = Number(summary.total_bytes || 0);
+        state.files.maxUploadBytes = Number(summary.max_upload_bytes || 0);
+
+        if (state.files.page > 1 && state.files.totalPages > 0 && state.files.page > state.files.totalPages) {
+            state.files.page = state.files.totalPages;
+            await loadFiles({ silent: true });
+            return;
+        }
+
+        if (state.filePanel.mode && !findFileItem(state.filePanel.fileId)) {
+            closeFilePanel();
+        }
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent && isPending("files")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
 async function loadClipboardHistory(options = {}) {
     if (!state.session) {
         return;
@@ -534,6 +628,18 @@ function handleOpenClipboardPanel(itemID) {
     }
 
     openClipboardPanel("details", item);
+    render();
+}
+
+function handleOpenFilePanel(mode, fileID) {
+    const file = findFileItem(fileID);
+    if (!file) {
+        state.pageError = "文件不存在或已被移除。";
+        render();
+        return;
+    }
+
+    openFilePanel(mode, file);
     render();
 }
 
@@ -669,6 +775,162 @@ async function handleClipboardUpload(form) {
     }
 }
 
+async function handleFileUpload(form) {
+    const fileInput = form.querySelector("input[name='file']");
+    const selectedFile = fileInput?.files?.[0] || null;
+    if (!selectedFile) {
+        state.pageError = "请先选择要上传的文件。";
+        render();
+        return;
+    }
+
+    state.files.selectedUploadName = selectedFile.name;
+    setPending("file-upload");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        const data = await request("/v1/files", {
+            method: "POST",
+            body: formData
+        });
+
+        state.files.page = 1;
+        state.files.selectedUploadName = "";
+        if (fileInput) {
+            fileInput.value = "";
+        }
+
+        const uploadedFileID = data.file?.id || "";
+        await loadFiles({ silent: true });
+        if (uploadedFileID) {
+            const nextFile = findFileItem(uploadedFileID);
+            if (nextFile) {
+                openFilePanel("details", nextFile);
+            }
+        }
+        showToast("文件已上传");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
+async function handleFileRenameSubmit(form) {
+    const fileID = state.filePanel.fileId;
+    if (!fileID) {
+        state.pageError = "文件不存在或已被移除。";
+        render();
+        return;
+    }
+
+    const formData = new FormData(form);
+    const originalName = String(formData.get("original_name") || "").trim();
+    state.filePanel.renameDraftName = originalName;
+
+    setPending("file-rename");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request(`/v1/files/${encodeURIComponent(fileID)}`, {
+            method: "PATCH",
+            body: {
+                original_name: originalName
+            }
+        });
+
+        await loadFiles({ silent: true });
+        const nextFile = findFileItem(fileID);
+        if (nextFile) {
+            openFilePanel("details", nextFile);
+        } else {
+            closeFilePanel();
+        }
+        showToast("文件名称已更新");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
+async function handleFileDownload(fileID) {
+    const file = findFileItem(fileID);
+    if (!file) {
+        state.pageError = "文件不存在或已被移除。";
+        render();
+        return;
+    }
+
+    setPending("file-download");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const response = await requestRaw(`/v1/files/${encodeURIComponent(fileID)}/download`);
+        const blob = await response.blob();
+        const fileName = parseFilenameFromContentDisposition(response.headers.get("Content-Disposition")) || file.original_name || "download.bin";
+        const objectURL = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectURL;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectURL);
+        showToast(`开始下载：${fileName}`);
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
+async function handleFileDelete(fileID) {
+    const file = findFileItem(fileID);
+    if (!file) {
+        state.pageError = "文件不存在或已被移除。";
+        render();
+        return;
+    }
+
+    if (!window.confirm(`确认删除文件“${file.original_name || "未命名文件"}”吗？`)) {
+        return;
+    }
+
+    setPending("file-delete");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request(`/v1/files/${encodeURIComponent(fileID)}`, {
+            method: "DELETE"
+        });
+        await loadFiles({ silent: true });
+        if (state.filePanel.fileId === fileID) {
+            closeFilePanel();
+        }
+        showToast(data.disk_removed === false ? "文件记录已删除，但磁盘文件清理失败" : "文件已删除");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
 async function handleReadSystemClipboard() {
     setPending("clipboard-read");
     state.pageError = null;
@@ -721,6 +983,26 @@ async function handleHistoryNext() {
     closeClipboardPanel();
     state.clipboard.historyPageIndex += 1;
     await loadClipboardHistory({ silent: false });
+}
+
+async function handleFilesPrev() {
+    if (state.files.page <= 1 || isPending("files")) {
+        return;
+    }
+
+    closeFilePanel();
+    state.files.page -= 1;
+    await loadFiles({ silent: false });
+}
+
+async function handleFilesNext() {
+    if ((state.files.totalPages > 0 && state.files.page >= state.files.totalPages) || isPending("files")) {
+        return;
+    }
+
+    closeFilePanel();
+    state.files.page += 1;
+    await loadFiles({ silent: false });
 }
 
 async function ensureRealtimeConnection(options = {}) {
@@ -1088,6 +1370,10 @@ function resetClipboardPager() {
     state.clipboard.historyHasMore = false;
 }
 
+function findFileItem(fileID) {
+    return state.files.items.find((item) => item.id === fileID) || null;
+}
+
 function handleAuthExpired(message) {
     disconnectRealtime();
     clearSession();
@@ -1151,6 +1437,25 @@ function navigate(route, options = {}) {
         return;
     }
     window.location.hash = nextHash;
+}
+
+function parseFilenameFromContentDisposition(contentDisposition) {
+    const headerValue = String(contentDisposition || "");
+    if (!headerValue) {
+        return "";
+    }
+
+    const utf8Match = headerValue.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+        try {
+            return decodeURIComponent(utf8Match[1]);
+        } catch (error) {
+            return utf8Match[1];
+        }
+    }
+
+    const plainMatch = headerValue.match(/filename="?([^";]+)"?/i);
+    return plainMatch?.[1] || "";
 }
 
 function render() {

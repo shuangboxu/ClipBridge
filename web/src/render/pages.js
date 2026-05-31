@@ -1,6 +1,6 @@
 import { NAV_ITEMS } from "../config/app.js";
 import { state, isPending } from "../state/store.js";
-import { escapeAttribute, escapeHTML, formatDateTime } from "../utils/format.js";
+import { escapeAttribute, escapeHTML, formatBytes, formatDateTime } from "../utils/format.js";
 import { renderDataRow, renderErrorMessage, renderModuleTile } from "./common.js";
 import { renderIcon } from "./icons.js";
 
@@ -31,7 +31,7 @@ export function renderCurrentPage(route) {
         case "devices":
             return renderDevicesPage();
         case "files":
-            return renderPlaceholderPage("文件中心");
+            return renderFilesPage();
         case "shares":
             return renderPlaceholderPage("分享管理");
         case "requests":
@@ -240,6 +240,139 @@ function renderClipboardItem(item) {
     `;
 }
 
+function renderFilesPage() {
+    const files = Array.isArray(state.files.items) ? state.files.items : [];
+    const totalPages = Math.max(state.files.totalPages, 1);
+
+    return `
+        ${renderFileOverview()}
+
+        <section class="card device-list-shell file-list-shell">
+            <div class="device-list-toolbar">
+                <p>第 ${state.files.page} / ${totalPages} 页 · 共 ${state.files.total} 个文件</p>
+                <div class="history-toolbar-actions">
+                    <button type="button" class="button-secondary button-compact" data-action="reload-files" ${isPending("files") ? "disabled" : ""}>
+                        ${isPending("files") ? "正在刷新..." : "刷新"}
+                    </button>
+                    <button type="button" class="button-ghost" data-action="files-prev" ${state.files.page <= 1 || isPending("files") ? "disabled" : ""}>
+                        上一页
+                    </button>
+                    <button type="button" class="button-ghost" data-action="files-next" ${(state.files.totalPages > 0 && state.files.page >= state.files.totalPages) || isPending("files") ? "disabled" : ""}>
+                        下一页
+                    </button>
+                </div>
+            </div>
+
+            ${files.length ? `
+                <div class="device-compact-list file-compact-list">
+                    ${files.map((item) => renderFileItem(item)).join("")}
+                </div>
+            ` : `
+                <div class="empty-state compact-empty-state">
+                    <img src="./assets/illustrations/p1/empty-files.webp" alt="暂无文件插画">
+                    <h3>暂无文件</h3>
+                    <p>上传一个文件后，就可以在这里统一查看、下载、重命名和删除。</p>
+                </div>
+            `}
+        </section>
+
+        ${renderFilePanel()}
+    `;
+}
+
+function renderFileOverview() {
+    return `
+        <section class="card device-stats-card file-summary-card">
+            <div class="sync-summary-shell">
+                <div class="device-stats-grid file-summary-grid">
+                    <div class="device-stat">
+                        <span>文件总数</span>
+                        <strong>${state.files.total}</strong>
+                    </div>
+                    <div class="device-stat">
+                        <span>总占用</span>
+                        <strong>${formatBytes(state.files.totalBytes)}</strong>
+                    </div>
+                    <div class="device-stat">
+                        <span>单文件上限</span>
+                        <strong>${formatBytes(state.files.maxUploadBytes)}</strong>
+                    </div>
+                </div>
+
+                <button
+                    type="button"
+                    class="icon-button history-upload-button"
+                    data-action="open-file-upload"
+                    aria-label="上传文件"
+                    title="上传文件"
+                >
+                    ${renderIcon("upload")}
+                </button>
+            </div>
+        </section>
+    `;
+}
+
+function renderFileItem(item) {
+    const isActive = state.filePanel.fileId === item.id;
+    const isCurrentOrigin = item.origin_device_id && item.origin_device_id === state.profile?.current_device_id;
+
+    return `
+        <article class="device-compact-item file-compact-item ${isActive ? "is-active" : ""}">
+            <div class="device-compact-main file-compact-main">
+                <button
+                    type="button"
+                    class="device-compact-copy file-compact-trigger"
+                    data-action="open-file-details"
+                    data-file-id="${escapeHTML(item.id)}"
+                    aria-label="查看文件详情"
+                    aria-pressed="${isActive ? "true" : "false"}"
+                >
+                    <strong class="file-compact-name">${escapeHTML(item.original_name || "未命名文件")}</strong>
+                    <div class="device-compact-status-row file-compact-meta-row">
+                        <span class="clipboard-item-seq">${formatBytes(item.size_bytes)}</span>
+                        <span class="device-compact-status">${escapeHTML(item.content_type || "application/octet-stream")}</span>
+                        <span class="device-compact-role">${escapeHTML(isCurrentOrigin ? "本机上传" : (item.origin_device_name || "未知设备"))}</span>
+                    </div>
+                </button>
+
+                <div class="device-compact-actions">
+                    <button
+                        type="button"
+                        class="icon-button"
+                        data-action="download-file"
+                        data-file-id="${escapeHTML(item.id)}"
+                        aria-label="下载文件"
+                        title="下载"
+                    >
+                        ${renderIcon("download")}
+                    </button>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        data-action="open-file-rename"
+                        data-file-id="${escapeHTML(item.id)}"
+                        aria-label="重命名文件"
+                        title="重命名"
+                    >
+                        ${renderIcon("edit")}
+                    </button>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        data-action="delete-file"
+                        data-file-id="${escapeHTML(item.id)}"
+                        aria-label="删除文件"
+                        title="删除"
+                    >
+                        ${renderIcon("trash")}
+                    </button>
+                </div>
+            </div>
+        </article>
+    `;
+}
+
 function renderPlaceholderPage(title) {
     return `
         <section class="card placeholder-card">
@@ -382,6 +515,61 @@ function renderClipboardPanel() {
         : renderClipboardDetailPanel(panelState.itemId);
 }
 
+function renderFilePanel() {
+    const panelState = state.filePanel;
+    if (!panelState.mode) {
+        return "";
+    }
+
+    if (panelState.mode === "upload") {
+        return renderFileUploadPanel();
+    }
+
+    if (!panelState.fileId) {
+        return "";
+    }
+
+    const file = state.files.items.find((item) => item.id === panelState.fileId);
+    if (!file) {
+        return "";
+    }
+
+    return panelState.mode === "rename"
+        ? renderFileRenamePanel(file, panelState)
+        : renderFileDetailPanel(file);
+}
+
+function renderFileUploadPanel() {
+    return `
+        <div class="device-panel-backdrop" data-action="close-file-panel"></div>
+        <aside class="device-panel file-panel">
+            <div class="device-panel-header">
+                <div>
+                    <h2>上传文件</h2>
+                    <p>单文件上限 ${formatBytes(state.files.maxUploadBytes || 0)}，会记录类型、哈希和来源设备。</p>
+                </div>
+                <button type="button" class="icon-button" data-action="close-file-panel" aria-label="关闭上传面板">
+                    ${renderIcon("close")}
+                </button>
+            </div>
+
+            <form id="file-upload-form" class="form-grid file-upload-form">
+                <div class="field">
+                    <label for="upload-file">选择文件</label>
+                    <input id="upload-file" name="file" type="file" required>
+                </div>
+
+                <div class="device-panel-actions">
+                    <button type="submit" class="button-primary" ${isPending("file-upload") ? "disabled" : ""}>
+                        ${isPending("file-upload") ? "正在上传..." : "上传文件"}
+                    </button>
+                    <span class="muted file-upload-hint">${escapeHTML(state.files.selectedUploadName || "上传后可在右侧查看详情。")}</span>
+                </div>
+            </form>
+        </aside>
+    `;
+}
+
 function renderClipboardUploadPanel() {
     return `
         <div class="device-panel-backdrop" data-action="close-clipboard-panel"></div>
@@ -416,6 +604,98 @@ function renderClipboardUploadPanel() {
                     </button>
                 </div>
             </form>
+        </aside>
+    `;
+}
+
+function renderFileDetailPanel(file) {
+    const isCurrentOrigin = file.origin_device_id && file.origin_device_id === state.profile?.current_device_id;
+
+    return `
+        <div class="device-panel-backdrop" data-action="close-file-panel"></div>
+        <aside class="device-panel file-panel">
+            <div class="device-panel-header">
+                <div>
+                    <h2>${escapeHTML(file.original_name || "未命名文件")}</h2>
+                    <p>${escapeHTML(formatDateTime(file.created_at))}</p>
+                </div>
+                <button type="button" class="icon-button" data-action="close-file-panel" aria-label="关闭详情">
+                    ${renderIcon("close")}
+                </button>
+            </div>
+
+            <div class="clipboard-item-badges">
+                <span class="badge badge-primary">${isCurrentOrigin ? "本机上传" : "远端文件"}</span>
+                <span class="badge badge-accent">${formatBytes(file.size_bytes)}</span>
+            </div>
+
+            <div class="data-list">
+                ${renderDataRow("文件 ID", file.id, true)}
+                ${renderDataRow("文件类型", file.content_type || "application/octet-stream")}
+                ${renderDataRow("文件大小", formatBytes(file.size_bytes))}
+                ${renderDataRow("SHA256", formatHash(file.file_sha256), true)}
+                ${renderDataRow("来源设备 ID", file.origin_device_id || "-", true)}
+                ${renderDataRow("来源设备名", file.origin_device_name || "-")}
+                ${renderDataRow("上传时间", formatDateTime(file.created_at))}
+            </div>
+
+            <div class="device-panel-actions">
+                <button type="button" class="button-primary" data-action="download-file" data-file-id="${escapeHTML(file.id)}" ${isPending("file-download") ? "disabled" : ""}>
+                    ${isPending("file-download") ? "正在下载..." : "下载文件"}
+                </button>
+                <button type="button" class="button-secondary" data-action="open-file-rename" data-file-id="${escapeHTML(file.id)}" ${isPending("file-download") || isPending("file-delete") ? "disabled" : ""}>
+                    重命名
+                </button>
+                <button type="button" class="button-danger" data-action="delete-file" data-file-id="${escapeHTML(file.id)}" ${isPending("file-download") || isPending("file-delete") ? "disabled" : ""}>
+                    ${isPending("file-delete") ? "正在删除..." : "删除文件"}
+                </button>
+            </div>
+        </aside>
+    `;
+}
+
+function renderFileRenamePanel(file, panelState) {
+    return `
+        <div class="device-panel-backdrop" data-action="close-file-panel"></div>
+        <aside class="device-panel file-panel">
+            <div class="device-panel-header">
+                <div>
+                    <h2>${escapeHTML(file.original_name || "未命名文件")}</h2>
+                    <p>重命名文件</p>
+                </div>
+                <button type="button" class="icon-button" data-action="close-file-panel" aria-label="关闭重命名">
+                    ${renderIcon("close")}
+                </button>
+            </div>
+
+            <form id="file-rename-form" class="form-grid">
+                <div class="field">
+                    <label for="file-original-name">文件名称</label>
+                    <input
+                        id="file-original-name"
+                        name="original_name"
+                        type="text"
+                        maxlength="255"
+                        value="${escapeAttribute(panelState.renameDraftName || file.original_name || "")}"
+                        required
+                    >
+                </div>
+
+                <div class="device-panel-actions">
+                    <button type="submit" class="button-primary" ${isPending("file-rename") ? "disabled" : ""}>
+                        ${isPending("file-rename") ? "正在保存..." : "保存名称"}
+                    </button>
+                    <button type="button" class="button-secondary" data-action="open-file-details" data-file-id="${escapeHTML(file.id)}" ${isPending("file-rename") ? "disabled" : ""}>
+                        返回详情
+                    </button>
+                </div>
+            </form>
+
+            <div class="data-list">
+                ${renderDataRow("文件类型", file.content_type || "application/octet-stream")}
+                ${renderDataRow("文件大小", formatBytes(file.size_bytes))}
+                ${renderDataRow("来源设备名", file.origin_device_name || "-")}
+            </div>
         </aside>
     `;
 }
