@@ -1,0 +1,139 @@
+.app-root {
+    -fx-background-color: linear-gradient(to bottom, #f6efe6 0%, #efe6da 100%);
+}
+
+.top-bar {
+    -fx-alignment: center;
+}
+
+.top-title {
+    -fx-text-fill: #2b2622;
+    -fx-font-size: 14px;
+    -fx-font-weight: 700;
+}
+
+.icon-button {
+    -fx-background-color: rgba(255, 255, 255, 0.86);
+    -fx-background-radius: 999px;
+    -fx-padding: 10px;
+    -fx-cursor: hand;
+    -fx-border-color: rgba(55, 44, 35, 0.12);
+    -fx-border-radius: 999px;
+}
+
+.icon-button:hover {
+    -fx-background-color: white;
+}
+
+.toolbar-icon {
+    -fx-fill: #3d342d;
+    -fx-scale-x: 0.82;
+    -fx-scale-y: 0.82;
+}
+
+.login-shell {
+    -fx-alignment: center;
+}
+
+.login-card {
+    -fx-background-color: rgba(255, 255, 255, 0.88);
+    -fx-background-radius: 32px;
+    -fx-padding: 28px 24px 24px 24px;
+    -fx-effect: dropshadow(gaussian, rgba(53, 42, 30, 0.12), 20, 0.22, 0, 8);
+}
+
+.login-title {
+    -fx-text-fill: #2b2622;
+    -fx-font-size: 24px;
+    -fx-font-weight: 800;
+}
+
+.field-label {
+    -fx-text-fill: #5f544c;
+    -fx-font-size: 12px;
+    -fx-font-weight: 700;
+}
+
+.text-field,
+.password-field {
+    -fx-background-color: white;
+    -fx-background-radius: 16px;
+    -fx-border-color: rgba(64, 51, 41, 0.12);
+    -fx-border-radius: 16px;
+    -fx-padding: 12px 14px 12px 14px;
+    -fx-font-size: 14px;
+}
+
+.primary-button {
+    -fx-background-color: #2f8f56;
+    -fx-background-radius: 18px;
+    -fx-text-fill: white;
+    -fx-font-size: 15px;
+    -fx-font-weight: 700;
+    -fx-padding: 12px 16px 12px 16px;
+    -fx-cursor: hand;
+}
+
+.primary-button:hover {
+    -fx-background-color: #277a49;
+}
+
+.home-shell {
+    -fx-alignment: top-center;
+}
+
+.sync-card,
+.settings-card {
+    -fx-background-color: rgba(255, 255, 255, 0.88);
+    -fx-background-radius: 34px;
+    -fx-padding: 24px;
+    -fx-max-width: 360px;
+    -fx-pref-width: 360px;
+    -fx-effect: dropshadow(gaussian, rgba(53, 42, 30, 0.12), 18, 0.18, 0, 8);
+}
+
+.sync-button {
+    -fx-background-radius: 999px;
+    -fx-padding: 18px;
+    -fx-cursor: hand;
+    -fx-min-width: 244px;
+    -fx-min-height: 244px;
+    -fx-max-width: 244px;
+    -fx-max-height: 244px;
+    -fx-pref-width: 244px;
+    -fx-pref-height: 244px;
+}
+
+.sync-button-on {
+    -fx-background-color: linear-gradient(to bottom, #dff3e6 0%, #f8fcfa 100%);
+    -fx-border-color: rgba(34, 132, 78, 0.12);
+    -fx-border-radius: 999px;
+}
+
+.sync-button-off {
+    -fx-background-color: linear-gradient(to bottom, #ececec 0%, #fafafa 100%);
+    -fx-border-color: rgba(70, 70, 70, 0.1);
+    -fx-border-radius: 999px;
+}
+
+.sync-state-label {
+    -fx-text-fill: #2b2622;
+    -fx-font-size: 24px;
+    -fx-font-weight: 800;
+}
+
+.settings-title {
+    -fx-text-fill: #2b2622;
+    -fx-font-size: 16px;
+    -fx-font-weight: 800;
+}
+
+.file-check {
+    -fx-text-fill: #4f443d;
+    -fx-font-size: 14px;
+}
+
+.toast-label {
+    -fx-text-fill: #594d45;
+    -fx-font-size: 12px;
+}

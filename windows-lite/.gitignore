@@ -1,0 +1,6 @@
+target/
+dist/
+
+### IntelliJ IDEA ###
+.idea/
+

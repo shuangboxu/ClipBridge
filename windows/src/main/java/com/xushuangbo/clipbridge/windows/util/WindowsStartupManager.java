@@ -49,8 +49,18 @@ public final class WindowsStartupManager {
 
     public static void remove() {
         ensureSupported();
+        // 中文注释：先判断一次是否已存在，避免因为系统语言或编码不同，把“本来就没配置”误判成失败。
+        if (!isEnabled()) {
+            return;
+        }
+
         CommandResult result = exec("reg", "delete", RUN_KEY, "/v", VALUE_NAME, "/f");
         if (result.exitCode == 0) {
+            return;
+        }
+
+        // 中文注释：有些机器上 reg delete 会返回非 0，但实际已经删掉了，这里再查一次最终状态。
+        if (!isEnabled()) {
             return;
         }
 

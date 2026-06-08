@@ -37,6 +37,7 @@ import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.image.Image;
@@ -51,7 +52,9 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.SVGPath;
 import javafx.stage.FileChooser;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
@@ -101,6 +104,7 @@ public class MainApp extends Application {
     private static final int FILE_PAGE_SIZE = 20;
     private static final int DEVICE_PAGE_SIZE = 10;
     private static final int SHARE_PAGE_SIZE = 10;
+    private static final long BYTES_PER_MB = 1024L * 1024L;
 
     private final AppStateStore stateStore = new AppStateStore();
     private final ApiClient apiClient = new ApiClient(stateStore);
@@ -118,7 +122,7 @@ public class MainApp extends Application {
     private final Map<NavPage, Button> navButtons = new EnumMap<>(NavPage.class);
     private final Map<NavPage, Label> pageNoticeLabels = new EnumMap<>(NavPage.class);
     private final EnumSet<NavPage> loadedPages = EnumSet.noneOf(NavPage.class);
-    private NavPage currentPage = NavPage.OVERVIEW;
+    private NavPage currentPage = NavPage.HISTORY;
 
     private Image appIconImage;
     private Image authHeroImage;
@@ -134,9 +138,17 @@ public class MainApp extends Application {
     private Label topUserLabel;
     private Label topRoleLabel;
     private Label topServerLabel;
-    private Label topSyncLabel;
+    private Button topSyncToggleButton;
     private Label globalStatusLabel;
+    private Label statusSyncLabel;
+    private Button statusSyncToggleButton;
     private Button adminNavButton;
+    private Stage settingsStage;
+    private Label settingsDialogTitleLabel;
+    private Label settingsDialogNoticeLabel;
+    private VBox settingsDialogContentBox;
+    private final Map<SettingsModule, Button> settingsModuleButtons = new EnumMap<>(SettingsModule.class);
+    private SettingsModule activeSettingsModule = SettingsModule.GENERAL;
 
     private TextField loginBaseUrlField;
     private TextField loginUsernameField;
@@ -205,10 +217,20 @@ public class MainApp extends Application {
     private Button sharePrevButton;
     private Button shareNextButton;
     private ComboBox<ShareRules.StatusFilter> shareStatusFilterBox;
+    private Stage shareComposeStage;
+    private Label shareComposeNoticeLabel;
+    private RadioButton shareTextModeRadio;
+    private RadioButton shareFileModeRadio;
+    private RadioButton shareNeverStrategyRadio;
+    private RadioButton shareExpireStrategyRadio;
+    private RadioButton shareOnceStrategyRadio;
+    private HBox shareTextContentFieldRow;
+    private HBox shareFileFieldRow;
     private TextArea shareTextContentArea;
     private Label shareSelectedFileLabel;
     private Label shareStrategySummaryLabel;
     private Label shareLatestLinkLabel;
+    private Button shareComposeToggleButton;
     private Label shareDetailTitleLabel;
     private Label shareDetailMetaLabel;
     private TextArea shareDetailPreviewArea;
@@ -265,6 +287,11 @@ public class MainApp extends Application {
     private CheckBox adminUserAdminCheck;
     private Button adminUserSaveButton;
     private Button adminUserDeleteButton;
+    private TitledPane adminSettingsSectionPane;
+    private TitledPane adminUsersSectionPane;
+    private TitledPane adminQuotaSectionPane;
+    private TitledPane adminBandwidthSectionPane;
+    private TitledPane adminPrivilegeSectionPane;
     private final ObservableList<QuotaRequest> pendingQuotaRequestItems = FXCollections.observableArrayList();
     private final ObservableList<BandwidthRequest> pendingBandwidthRequestItems = FXCollections.observableArrayList();
     private final ObservableList<AdminRequest> pendingAdminRequestItems = FXCollections.observableArrayList();
@@ -276,6 +303,7 @@ public class MainApp extends Application {
     private PasswordField settingsNewPasswordField;
     private PasswordField settingsConfirmPasswordField;
     private CheckBox settingsSyncEnabledCheck;
+    private CheckBox settingsAutoUploadClipboardFilesCheck;
     private CheckBox settingsAutoStartCheck;
     private CheckBox settingsStartInTrayCheck;
 
@@ -325,7 +353,7 @@ public class MainApp extends Application {
         AppState state = stateStore.getState();
         if (state.isLoggedIn()) {
             showMainScene();
-            showPage(NavPage.OVERVIEW, true);
+            showPage(NavPage.HISTORY, true);
             refreshTopBarFromState();
             if (forceStartInTrayArg && trayIcon != null) {
                 primaryStage.hide();
@@ -355,33 +383,23 @@ public class MainApp extends Application {
         String stylesheet = Objects.requireNonNull(getClass().getResource("/css/app.css")).toExternalForm();
         loginScene.getStylesheets().add(stylesheet);
         mainScene.getStylesheets().add(stylesheet);
+        buildSettingsStage(stylesheet);
+        buildShareComposeStage(stylesheet);
     }
 
     private BorderPane buildLoginRoot() {
         BorderPane root = new BorderPane();
-        root.getStyleClass().add("login-root");
-
-        VBox heroPane = new VBox(18);
-        heroPane.getStyleClass().add("brand-pane");
-        heroPane.setPadding(new Insets(48));
-        heroPane.setAlignment(Pos.CENTER_LEFT);
-        heroPane.getChildren().addAll(
-            createBrandMark(),
-            createKickerLabel("Windows 桌面端"),
-            createHeadlineLabel("ClipBridge"),
-            createBodyLabel("接入当前 Web 与 Android 已落地的全部核心能力，保持桌面托盘常驻、文本实时同步、文件中转、分享与管理台体验。"),
-            createHeroImageView(authHeroImage, 420)
-        );
+        root.getStyleClass().addAll("login-root", "login-stage");
 
         VBox formCard = new VBox(16);
         formCard.getStyleClass().addAll("card", "auth-card");
         formCard.setPadding(new Insets(28));
-        formCard.setMaxWidth(430);
+        formCard.setMaxWidth(520);
 
-        loginModeLabel = new Label("登录 ClipBridge");
+        loginModeLabel = new Label("登录");
         loginModeLabel.getStyleClass().add("section-title");
 
-        loginHintLabel = new Label("使用当前服务地址和账号信息进入桌面控制台。");
+        loginHintLabel = new Label("输入账号后进入控制台。");
         loginHintLabel.getStyleClass().add("field-help");
 
         loginBaseUrlField = new TextField();
@@ -418,7 +436,8 @@ public class MainApp extends Application {
             error -> setLoginHint("服务测试失败: " + error.getMessage(), true)
         ));
 
-        HBox authSecondaryActions = new HBox(10, loginTestButton);
+        HBox authSecondaryActions = new HBox(10, loginTestButton, loginSwitchModeButton);
+        authSecondaryActions.getStyleClass().add("auth-inline-actions");
         authSecondaryActions.setAlignment(Pos.CENTER_LEFT);
 
         formCard.getChildren().addAll(
@@ -429,18 +448,36 @@ public class MainApp extends Application {
             createLabeledField("密码", loginPasswordField),
             createLabeledField("设备名", loginDeviceNameField),
             authSecondaryActions,
-            loginSubmitButton,
-            loginSwitchModeButton
+            loginSubmitButton
         );
 
-        VBox rightPane = new VBox(formCard);
-        rightPane.setPadding(new Insets(48));
-        rightPane.setAlignment(Pos.CENTER);
+        VBox authShell = new VBox(18);
+        authShell.getStyleClass().add("auth-shell");
+        authShell.setMaxWidth(520);
+        authShell.setPadding(new Insets(36));
 
-        HBox content = new HBox(heroPane, rightPane);
-        HBox.setHgrow(heroPane, Priority.ALWAYS);
-        HBox.setHgrow(rightPane, Priority.ALWAYS);
-        root.setCenter(content);
+        HBox authBrandRow = new HBox(14);
+        authBrandRow.getStyleClass().add("auth-brand-row");
+        authBrandRow.setAlignment(Pos.CENTER_LEFT);
+        if (appIconImage != null) {
+            ImageView imageView = new ImageView(appIconImage);
+            imageView.setFitHeight(44);
+            imageView.setPreserveRatio(true);
+            authBrandRow.getChildren().add(imageView);
+        }
+        VBox authBrandCopy = new VBox(2);
+        authBrandCopy.getStyleClass().add("auth-brand-copy");
+        Label authBrandTitle = new Label("ClipBridge");
+        authBrandTitle.getStyleClass().add("auth-brand-title");
+        Label authBrandSubtitle = new Label("Windows 登录");
+        authBrandSubtitle.getStyleClass().add("auth-brand-subtitle");
+        authBrandCopy.getChildren().addAll(authBrandTitle, authBrandSubtitle);
+        authBrandRow.getChildren().add(authBrandCopy);
+
+        authShell.getChildren().addAll(authBrandRow, formCard);
+        StackPane centerPane = new StackPane(authShell);
+        centerPane.setAlignment(Pos.CENTER);
+        root.setCenter(centerPane);
 
         updateLoginModeText();
         applyLoginStateToForm();
@@ -451,13 +488,24 @@ public class MainApp extends Application {
         BorderPane root = new BorderPane();
         root.getStyleClass().add("app-shell");
 
-        root.setLeft(buildSidebar());
-        root.setTop(buildTopBar());
-        root.setBottom(buildStatusBar());
+        // 主界面结构向 Web 端靠拢：左侧固定导航，右侧再承载顶部栏和页面内容。
+        HBox shell = new HBox();
+        shell.getStyleClass().add("app-frame");
+
+        BorderPane appMain = new BorderPane();
+        appMain.getStyleClass().add("app-main");
+        appMain.setTop(buildTopBar());
 
         pageContainer = new StackPane();
-        pageContainer.setPadding(new Insets(20, 24, 24, 24));
-        root.setCenter(pageContainer);
+        pageContainer.getStyleClass().add("page-container");
+        pageContainer.setPadding(new Insets(24, 28, 32, 28));
+        appMain.setCenter(pageContainer);
+
+        Node sidebar = buildSidebar();
+        shell.getChildren().addAll(sidebar, appMain);
+        HBox.setHgrow(appMain, Priority.ALWAYS);
+        root.setCenter(shell);
+        root.setBottom(buildStatusBar());
 
         buildPages();
         return root;
@@ -467,16 +515,30 @@ public class MainApp extends Application {
         VBox sidebar = new VBox(10);
         sidebar.getStyleClass().add("sidebar");
         sidebar.setPadding(new Insets(24));
-        sidebar.setPrefWidth(220);
+        sidebar.setPrefWidth(232);
 
+        HBox brandRow = new HBox(12);
+        brandRow.setAlignment(Pos.CENTER_LEFT);
+        if (appIconImage != null) {
+            ImageView imageView = new ImageView(appIconImage);
+            imageView.setFitHeight(36);
+            imageView.setPreserveRatio(true);
+            brandRow.getChildren().add(imageView);
+        }
+        VBox brandCopy = new VBox(2);
         Label brandTitle = new Label("ClipBridge");
         brandTitle.getStyleClass().add("sidebar-brand");
         Label brandHint = new Label("Windows 控制台");
         brandHint.getStyleClass().add("sidebar-hint");
+        brandCopy.getChildren().addAll(brandTitle, brandHint);
+        brandRow.getChildren().add(brandCopy);
 
-        sidebar.getChildren().addAll(brandTitle, brandHint, new Separator());
+        sidebar.getChildren().addAll(brandRow, new Separator());
 
         for (NavPage page : NavPage.values()) {
+            if (page == NavPage.OVERVIEW || page == NavPage.SETTINGS) {
+                continue;
+            }
             Button button = createNavButton(page);
             navButtons.put(page, button);
             if (page == NavPage.ADMIN) {
@@ -487,41 +549,30 @@ public class MainApp extends Application {
 
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
-        Label footerLabel = new Label("JavaFX + Maven + jpackage");
-        footerLabel.getStyleClass().add("sidebar-footer");
-        sidebar.getChildren().addAll(spacer, footerLabel);
+        Button settingsButton = createNavButton(NavPage.SETTINGS);
+        settingsButton.getStyleClass().add("nav-button-settings");
+        navButtons.put(NavPage.SETTINGS, settingsButton);
+        sidebar.getChildren().addAll(spacer, new Separator(), settingsButton);
         return sidebar;
     }
 
     private Node buildTopBar() {
         BorderPane topBar = new BorderPane();
         topBar.getStyleClass().add("topbar");
-        topBar.setPadding(new Insets(18, 24, 18, 24));
+        topBar.setPadding(new Insets(16, 24, 16, 24));
 
-        topTitleLabel = new Label("总览");
+        topTitleLabel = new Label(currentPage.getLabel());
         topTitleLabel.getStyleClass().add("topbar-title");
 
-        topUserLabel = createBadgeLabel("未登录");
-        topRoleLabel = createBadgeLabel("普通用户");
-        topServerLabel = createBadgeLabel("未配置服务地址");
-        topSyncLabel = createBadgeLabel("同步未启动");
+        topUserLabel = createMetaValueLabel("未登录");
+        topSyncToggleButton = createGhostButton("关闭同步");
+        topSyncToggleButton.setOnAction(event -> toggleSyncEnabled(!stateStore.getState().isSyncEnabled()));
 
-        HBox left = new HBox(14, topTitleLabel);
+        HBox left = new HBox(topTitleLabel);
         left.setAlignment(Pos.CENTER_LEFT);
 
-        Button refreshButton = createGhostButton("刷新当前页");
-        refreshButton.setOnAction(event -> showPage(currentPage, true));
-
-        Button syncNowButton = createGhostButton("立即同步");
-        syncNowButton.setOnAction(event -> {
-            syncService.requestImmediateSync();
-            showToast("已触发立即同步");
-        });
-
-        Button logoutButton = createDangerButton("退出登录");
-        logoutButton.setOnAction(event -> handleLogout(true));
-
-        HBox right = new HBox(10, topUserLabel, topRoleLabel, topServerLabel, topSyncLabel, refreshButton, syncNowButton, logoutButton);
+        HBox right = new HBox(12, topSyncToggleButton, topUserLabel);
+        right.getStyleClass().add("topbar-user-group");
         right.setAlignment(Pos.CENTER_RIGHT);
 
         topBar.setLeft(left);
@@ -530,93 +581,117 @@ public class MainApp extends Application {
     }
 
     private Node buildStatusBar() {
-        HBox bar = new HBox();
+        HBox bar = new HBox(12);
         bar.getStyleClass().add("statusbar");
         bar.setPadding(new Insets(10, 24, 10, 24));
         globalStatusLabel = new Label("就绪");
         globalStatusLabel.getStyleClass().add("statusbar-text");
-        bar.getChildren().add(globalStatusLabel);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        statusSyncLabel = new Label("同步状态加载中");
+        statusSyncLabel.getStyleClass().add("statusbar-meta");
+        statusSyncToggleButton = createGhostButton("关闭同步");
+        statusSyncToggleButton.setOnAction(event -> toggleSyncEnabled(!stateStore.getState().isSyncEnabled()));
+
+        bar.getChildren().addAll(globalStatusLabel, spacer, statusSyncLabel, statusSyncToggleButton);
         return bar;
     }
 
     private void buildPages() {
-        pageNodes.put(NavPage.OVERVIEW, buildOverviewPage());
         pageNodes.put(NavPage.HISTORY, buildHistoryPage());
         pageNodes.put(NavPage.DEVICES, buildDevicesPage());
         pageNodes.put(NavPage.FILES, buildFilesPage());
         pageNodes.put(NavPage.SHARES, buildSharesPage());
         pageNodes.put(NavPage.REQUESTS, buildRequestsPage());
         pageNodes.put(NavPage.ADMIN, buildAdminPage());
-        pageNodes.put(NavPage.SETTINGS, buildSettingsPage());
     }
 
     private Node buildOverviewPage() {
-        VBox page = new VBox(18);
-        page.getChildren().add(createPageHeader(NavPage.OVERVIEW, "欢迎回来，这里统一承接桌面端的同步中心、账号摘要和快捷操作。"));
+        VBox page = new VBox(20);
+        page.getChildren().add(createPageHeader(NavPage.OVERVIEW, ""));
 
-        HBox heroCard = new HBox(22);
-        heroCard.getStyleClass().addAll("card", "hero-card");
-        heroCard.setAlignment(Pos.CENTER_LEFT);
-        heroCard.setPadding(new Insets(22));
-
-        VBox heroCopy = new VBox(10);
-        Label heroKicker = createKickerLabel("桌面控制台");
-        Label heroTitle = createHeadlineLabel("把同步、管理和托盘常驻放到一个入口里");
-        Label heroBody = createBodyLabel("实时文本同步走 WebSocket，断线后自动切回 pull 补拉。你可以在这里看到当前账号、设备、额度和最近 ACK 进度。");
-        heroCopy.getChildren().addAll(heroKicker, heroTitle, heroBody);
-
-        Node heroImage = createHeroImageView(dashboardHeroImage, 320);
-        HBox.setHgrow(heroCopy, Priority.ALWAYS);
-        heroCard.getChildren().addAll(heroCopy, heroImage);
-
-        FlowPane statGrid = new FlowPane(16, 16);
-        statGrid.getStyleClass().add("stat-grid");
         overviewAccountValueLabel = new Label("--");
         overviewDeviceValueLabel = new Label("--");
         overviewSyncValueLabel = new Label("--");
         overviewQuotaValueLabel = new Label("--");
         overviewBandwidthValueLabel = new Label("--");
         overviewAckValueLabel = new Label("--");
-        statGrid.getChildren().addAll(
-            createStatCard("当前账号", overviewAccountValueLabel, "用户名与角色快照"),
-            createStatCard("当前设备", overviewDeviceValueLabel, "设备名与 ID"),
-            createStatCard("同步状态", overviewSyncValueLabel, "开关、托盘与连接状态"),
-            createStatCard("存储配额", overviewQuotaValueLabel, "账号当前可用配额"),
-            createStatCard("带宽额度", overviewBandwidthValueLabel, "上传 / 下载带宽"),
-            createStatCard("ACK 进度", overviewAckValueLabel, "本地已确认到的序号")
-        );
-
-        HBox actionRow = new HBox(12);
-        actionRow.setAlignment(Pos.CENTER_LEFT);
 
         overviewSyncToggleButton = createPrimaryButton("关闭同步");
         overviewSyncToggleButton.setOnAction(event -> toggleSyncEnabled(!stateStore.getState().isSyncEnabled()));
 
-        Button openHistoryButton = createGhostButton("打开历史页");
+        VBox accountCard = createSummaryCard("当前账号");
+        accountCard.getChildren().addAll(
+            createSummaryRow("用户", overviewAccountValueLabel),
+            createSummaryRow("配额", overviewQuotaValueLabel),
+            createSummaryRow("带宽", overviewBandwidthValueLabel)
+        );
+
+        VBox deviceCard = createSummaryCard("当前设备");
+        deviceCard.getChildren().addAll(
+            createSummaryRow("设备", overviewDeviceValueLabel),
+            createSummaryRow("同步", overviewSyncValueLabel),
+            createSummaryRow("ACK", overviewAckValueLabel)
+        );
+
+        HBox summaryGrid = new HBox(20, accountCard, deviceCard);
+        HBox.setHgrow(accountCard, Priority.ALWAYS);
+        HBox.setHgrow(deviceCard, Priority.ALWAYS);
+
+        FlowPane moduleGrid = new FlowPane(16, 16);
+        moduleGrid.getStyleClass().add("module-grid");
+
+        Button openHistoryButton = createModuleTile(NavPage.HISTORY, "文本记录");
         openHistoryButton.setOnAction(event -> showPage(NavPage.HISTORY, true));
 
-        Button openFilesButton = createGhostButton("打开文件页");
+        Button openFilesButton = createModuleTile(NavPage.FILES, "文件列表");
         openFilesButton.setOnAction(event -> showPage(NavPage.FILES, true));
 
-        Button openSharesButton = createGhostButton("打开分享页");
+        Button openSharesButton = createModuleTile(NavPage.SHARES, "分享列表");
         openSharesButton.setOnAction(event -> showPage(NavPage.SHARES, true));
 
+        Button openDevicesButton = createModuleTile(NavPage.DEVICES, "设备中心");
+        openDevicesButton.setOnAction(event -> showPage(NavPage.DEVICES, true));
+
+        Button openRequestsButton = createModuleTile(NavPage.REQUESTS, "申请记录");
+        openRequestsButton.setOnAction(event -> showPage(NavPage.REQUESTS, true));
+
+        Button openSettingsButton = createModuleTile(NavPage.SETTINGS, "桌面设置");
+        openSettingsButton.setOnAction(event -> showPage(NavPage.SETTINGS, true));
+
+        moduleGrid.getChildren().addAll(
+            openHistoryButton,
+            openDevicesButton,
+            openFilesButton,
+            openSharesButton,
+            openRequestsButton,
+            openSettingsButton
+        );
+
+        VBox moduleCard = createCardBox();
+        Label moduleTitle = new Label("功能入口");
+        moduleTitle.getStyleClass().add("section-title");
+        moduleCard.getChildren().addAll(moduleTitle, moduleGrid);
+
+        HBox actionRow = new HBox(12);
+        actionRow.setAlignment(Pos.CENTER_LEFT);
         Button syncNowButton = createGhostButton("立即同步");
         syncNowButton.setOnAction(event -> {
             syncService.requestImmediateSync();
             showToast("已触发立即同步");
         });
+        actionRow.getChildren().addAll(overviewSyncToggleButton, syncNowButton);
 
-        actionRow.getChildren().addAll(overviewSyncToggleButton, syncNowButton, openHistoryButton, openFilesButton, openSharesButton);
-
-        page.getChildren().addAll(heroCard, statGrid, actionRow);
+        page.getChildren().addAll(summaryGrid, moduleCard, actionRow);
         return wrapScrollablePage(page);
     }
 
     private Node buildHistoryPage() {
         BorderPane page = new BorderPane();
         VBox topSection = new VBox(16);
-        topSection.getChildren().add(createPageHeader(NavPage.HISTORY, "分页查看历史文本、手动上传、复制完整内容，并跟随实时同步状态更新。"));
+        topSection.getChildren().add(createPageHeader(NavPage.HISTORY, "历史同步记录"));
 
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -639,14 +714,7 @@ public class MainApp extends Application {
         historyPageLabel = createSecondaryValueLabel("第 1 页");
         toolbar.getChildren().addAll(refreshButton, historyPrevButton, historyNextButton, historyPageLabel);
 
-        HBox quickStats = new HBox(12);
-        quickStats.getChildren().addAll(
-            createInlineInfoCard("当前 ACK", createSecondaryValueLabel("本地游标会自动推进")),
-            createInlineInfoCard("实时链路", createSecondaryValueLabel("WebSocket 优先，pull 兜底")),
-            createInlineInfoCard("上传方式", createSecondaryValueLabel("本机复制自动上传，手动文本可立即提交"))
-        );
-
-        topSection.getChildren().addAll(toolbar, quickStats);
+        topSection.getChildren().add(toolbar);
         page.setTop(topSection);
 
         historyListView = new ListView<>(historyItems);
@@ -695,7 +763,7 @@ public class MainApp extends Application {
         VBox.setVgrow(listPane, Priority.ALWAYS);
 
         VBox detailColumn = createCardBox();
-        Label detailTitle = new Label("右侧详情抽屉");
+        Label detailTitle = new Label("详情");
         detailTitle.getStyleClass().add("section-title");
         historyDetailMetaLabel = createSecondaryValueLabel("选择左侧记录后显示完整内容。");
         historyDetailTextArea = new TextArea();
@@ -726,7 +794,7 @@ public class MainApp extends Application {
     private Node buildDevicesPage() {
         BorderPane page = new BorderPane();
         VBox topSection = new VBox(16);
-        topSection.getChildren().add(createPageHeader(NavPage.DEVICES, "当前设备会被明确标记，支持改名和强制下线其它会话。"));
+        topSection.getChildren().add(createPageHeader(NavPage.DEVICES, "设备列表"));
 
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -768,7 +836,7 @@ public class MainApp extends Application {
         StackPane listPane = createListPane(deviceListView, deviceItems, createEmptyState(
             emptyDevicesImage,
             "暂无设备记录",
-            "登录成功后，当前设备会自动登记到服务端。",
+            "登录后会自动登记当前设备。",
             "刷新设备列表",
             () -> refreshDevicesPageAsync(1)
         ));
@@ -777,7 +845,7 @@ public class MainApp extends Application {
         Label detailTitle = new Label("设备详情");
         detailTitle.getStyleClass().add("section-title");
         deviceDetailTitleLabel = createSecondaryValueLabel("请选择一个设备");
-        deviceDetailMetaLabel = createSmallMutedLabel("设备名、平台、设备 ID 和在线状态会显示在这里。");
+        deviceDetailMetaLabel = createSmallMutedLabel("显示设备信息。");
         deviceRenameField = new TextField();
         deviceRenameField.setPromptText("新的设备名");
         deviceSaveButton = createPrimaryButton("保存设备名");
@@ -795,17 +863,10 @@ public class MainApp extends Application {
     private Node buildFilesPage() {
         BorderPane page = new BorderPane();
         VBox topSection = new VBox(16);
-        topSection.getChildren().add(createPageHeader(NavPage.FILES, "这里对齐 Web 文件中心：概览卡片、分页列表、上传入口和右侧详情操作。"));
-
-        FlowPane summaryCards = new FlowPane(14, 14);
+        topSection.getChildren().add(createPageHeader(NavPage.FILES, "文件列表"));
         fileSummaryFilesLabel = new Label("--");
         fileSummaryBytesLabel = new Label("--");
         fileSummaryLimitLabel = new Label("--");
-        summaryCards.getChildren().addAll(
-            createStatCard("文件总数", fileSummaryFilesLabel, "当前账号已上传文件数"),
-            createStatCard("文件体积", fileSummaryBytesLabel, "总占用存储空间"),
-            createStatCard("单次上限", fileSummaryLimitLabel, "服务端允许的最大上传文件")
-        );
 
         HBox toolbar = new HBox(10);
         toolbar.setAlignment(Pos.CENTER_LEFT);
@@ -823,12 +884,12 @@ public class MainApp extends Application {
         VBox uploadDropCard = createCardBox();
         Label dropTitle = new Label("拖拽上传");
         dropTitle.getStyleClass().add("section-title");
-        fileDropHintLabel = createSecondaryValueLabel("把文件拖到这里，或使用上方按钮选择多个文件。");
+        fileDropHintLabel = createSecondaryValueLabel("拖到这里，或点击上方按钮选择文件。");
         uploadDropCard.getChildren().addAll(dropTitle, fileDropHintLabel);
         uploadDropCard.getStyleClass().add("dropzone-card");
         configureFileDropZone(uploadDropCard, paths -> uploadFilesAsync(paths, true));
 
-        topSection.getChildren().addAll(summaryCards, toolbar, uploadDropCard);
+        topSection.getChildren().addAll(toolbar, uploadDropCard);
         page.setTop(topSection);
 
         fileListView = new ListView<>(fileItems);
@@ -854,7 +915,7 @@ public class MainApp extends Application {
         StackPane listPane = createListPane(fileListView, fileItems, createEmptyState(
             emptyFilesImage,
             "文件列表还是空的",
-            "支持按钮上传和拖拽上传，上传完成后会立刻出现在这里。",
+            "上传后会显示在这里。",
             "选择文件上传",
             this::chooseFilesForUpload
         ));
@@ -891,123 +952,7 @@ public class MainApp extends Application {
     private Node buildSharesPage() {
         BorderPane page = new BorderPane();
         VBox topSection = new VBox(16);
-        topSection.getChildren().add(createPageHeader(NavPage.SHARES, "统一用桌面版创建文本 / 文件分享，分享策略本地持久化，支持筛选、撤销、复制和打开公开链接。"));
-
-        VBox composeCard = createCardBox();
-        Label composeTitle = new Label("创建分享");
-        composeTitle.getStyleClass().add("section-title");
-
-        ToggleGroup composeModeGroup = new ToggleGroup();
-        RadioButton textMode = createChoiceButton("文本分享", composeModeGroup, true);
-        RadioButton fileMode = createChoiceButton("文件分享", composeModeGroup, false);
-        composeModeGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
-            selectedShareComposeMode = newValue == fileMode ? ShareRules.ComposeMode.FILE : ShareRules.ComposeMode.TEXT;
-            refreshShareComposeMode();
-        });
-
-        ToggleGroup strategyGroup = new ToggleGroup();
-        RadioButton neverStrategy = createChoiceButton(ShareRules.StrategyKey.NEVER.getLabel(), strategyGroup, false);
-        RadioButton expireStrategy = createChoiceButton(ShareRules.StrategyKey.EXPIRE.getLabel(), strategyGroup, true);
-        RadioButton onceStrategy = createChoiceButton(ShareRules.StrategyKey.ONCE.getLabel(), strategyGroup, false);
-        strategyGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
-            if (newValue == neverStrategy) {
-                selectedShareStrategy = ShareRules.StrategyKey.NEVER;
-            } else if (newValue == onceStrategy) {
-                selectedShareStrategy = ShareRules.StrategyKey.ONCE;
-            } else {
-                selectedShareStrategy = ShareRules.StrategyKey.EXPIRE;
-            }
-            refreshShareRuleUi();
-        });
-
-        HBox modeRow = new HBox(10, textMode, fileMode);
-        HBox strategyRow = new HBox(10, neverStrategy, expireStrategy, onceStrategy);
-
-        shareTextContentArea = new TextArea();
-        shareTextContentArea.setPromptText("输入要分享的文字内容");
-        shareTextContentArea.setPrefRowCount(4);
-
-        shareSelectedFileLabel = createSecondaryValueLabel("未选择文件");
-        Button shareChooseFileButton = createGhostButton("选择文件");
-        shareChooseFileButton.setOnAction(event -> chooseShareFile());
-        Button shareClearFileButton = createGhostButton("清空文件");
-        shareClearFileButton.setOnAction(event -> {
-            selectedShareFilePath = null;
-            shareSelectedFileLabel.setText("未选择文件");
-        });
-        HBox shareFileRow = new HBox(10, shareChooseFileButton, shareClearFileButton, shareSelectedFileLabel);
-        shareFileRow.setAlignment(Pos.CENTER_LEFT);
-
-        AppState state = stateStore.getState();
-        ShareRules.Config rules = state.getShareRules();
-        shareNeverAllowCopyCheck = new CheckBox("允许公开页复制文字");
-        shareNeverAllowCopyCheck.setSelected(rules.never().allowCopyText());
-        shareExpireAllowCopyCheck = new CheckBox("允许公开页复制文字");
-        shareExpireAllowCopyCheck.setSelected(rules.expire().allowCopyText());
-        shareOnceAllowCopyCheck = new CheckBox("允许公开页复制文字");
-        shareOnceAllowCopyCheck.setSelected(rules.once().allowCopyText());
-        shareOnceShowCountdownCheck = new CheckBox("首次打开后展示倒计时");
-        shareOnceShowCountdownCheck.setSelected(rules.once().showCountdown());
-        shareExpirePresetBox = new ComboBox<>(FXCollections.observableArrayList(ShareRules.ExpirePreset.values()));
-        shareExpirePresetBox.setValue(rules.expire().preset());
-        shareCountdownPresetBox = new ComboBox<>(FXCollections.observableArrayList(ShareRules.CountdownPreset.values()));
-        shareCountdownPresetBox.setValue(rules.once().countdownPreset());
-
-        shareNeverRuleBox = new VBox(8, createFieldLabel("不过期策略"), shareNeverAllowCopyCheck);
-        shareExpireRuleBox = new VBox(8, createFieldLabel("过期策略"), shareExpirePresetBox, shareExpireAllowCopyCheck);
-        shareOnceRuleBox = new VBox(8, createFieldLabel("阅后即焚策略"), shareOnceShowCountdownCheck, shareCountdownPresetBox, shareOnceAllowCopyCheck);
-
-        shareNeverAllowCopyCheck.setOnAction(event -> persistShareRulesFromControls());
-        shareExpireAllowCopyCheck.setOnAction(event -> persistShareRulesFromControls());
-        shareOnceAllowCopyCheck.setOnAction(event -> persistShareRulesFromControls());
-        shareOnceShowCountdownCheck.setOnAction(event -> {
-            persistShareRulesFromControls();
-            refreshShareRuleUi();
-        });
-        shareExpirePresetBox.setOnAction(event -> {
-            persistShareRulesFromControls();
-            refreshShareRuleUi();
-        });
-        shareCountdownPresetBox.setOnAction(event -> {
-            persistShareRulesFromControls();
-            refreshShareRuleUi();
-        });
-
-        shareStrategySummaryLabel = createSecondaryValueLabel("--");
-
-        Button createShareButton = createPrimaryButton("生成分享");
-        createShareButton.setOnAction(event -> createShareAsync());
-
-        shareLatestLinkLabel = createSmallMutedLabel("最近生成的分享链接会显示在这里。");
-        Button copyLatestLinkButton = createGhostButton("复制最近链接");
-        copyLatestLinkButton.setOnAction(event -> copyShareLink(shareLatestLinkLabel.getText()));
-        Button openLatestLinkButton = createGhostButton("打开最近链接");
-        openLatestLinkButton.setOnAction(event -> openShareLink(shareLatestLinkLabel.getText()));
-
-        composeCard.getChildren().addAll(
-            composeTitle,
-            createFieldLabel("分享类型"),
-            modeRow,
-            createFieldLabel("分享策略"),
-            strategyRow,
-            shareStrategySummaryLabel,
-            shareNeverRuleBox,
-            shareExpireRuleBox,
-            shareOnceRuleBox,
-            createLabeledField("文本内容", shareTextContentArea),
-            shareFileRow,
-            createShareButton,
-            new HBox(10, copyLatestLinkButton, openLatestLinkButton),
-            shareLatestLinkLabel
-        );
-        configureFileDropZone(composeCard, paths -> {
-            if (!paths.isEmpty()) {
-                selectedShareComposeMode = ShareRules.ComposeMode.FILE;
-                selectedShareFilePath = paths.get(0);
-                shareSelectedFileLabel.setText(selectedShareFilePath.getFileName().toString());
-                refreshShareComposeMode();
-            }
-        });
+        topSection.getChildren().add(createPageHeader(NavPage.SHARES, "分享列表"));
 
         shareStatusFilterBox = new ComboBox<>(FXCollections.observableArrayList(ShareRules.StatusFilter.values()));
         shareStatusFilterBox.setValue(ShareRules.StatusFilter.ALL);
@@ -1022,9 +967,22 @@ public class MainApp extends Application {
         shareNextButton = createGhostButton("下一页");
         shareNextButton.setOnAction(event -> refreshSharesPageAsync(Math.min(shareTotalPages, sharePage + 1)));
         sharePageLabel = createSecondaryValueLabel("第 1 / 1 页");
-        listToolbar.getChildren().addAll(shareStatusFilterBox, shareRefreshButton, sharePrevButton, shareNextButton, sharePageLabel);
+        shareComposeToggleButton = createIconButton("创建分享");
+        shareComposeToggleButton.setGraphic(createShareIconGraphic());
+        shareComposeToggleButton.setOnAction(event -> openShareComposeModal());
+        Region shareToolbarSpacer = new Region();
+        HBox.setHgrow(shareToolbarSpacer, Priority.ALWAYS);
+        listToolbar.getChildren().addAll(
+            shareStatusFilterBox,
+            shareRefreshButton,
+            sharePrevButton,
+            shareNextButton,
+            sharePageLabel,
+            shareToolbarSpacer,
+            shareComposeToggleButton
+        );
 
-        topSection.getChildren().addAll(composeCard, listToolbar);
+        topSection.getChildren().add(listToolbar);
         page.setTop(topSection);
 
         shareListView = new ListView<>(shareItems);
@@ -1057,19 +1015,16 @@ public class MainApp extends Application {
         StackPane listPane = createListPane(shareListView, shareItems, createEmptyState(
             emptySharesImage,
             "还没有分享记录",
-            "上方创建面板支持文本分享和文件分享，策略会保存到本地状态文件。",
-            "切换到文本分享",
-            () -> {
-                selectedShareComposeMode = ShareRules.ComposeMode.TEXT;
-                refreshShareComposeMode();
-            }
+            "创建后会显示在这里。",
+            "创建分享",
+            this::openShareComposeModal
         ));
 
         VBox detailColumn = createCardBox();
         Label detailTitle = new Label("分享详情");
         detailTitle.getStyleClass().add("section-title");
         shareDetailTitleLabel = createSecondaryValueLabel("请选择一个分享");
-        shareDetailMetaLabel = createSmallMutedLabel("链接、状态、焚毁策略和预览会显示在这里。");
+        shareDetailMetaLabel = createSmallMutedLabel("显示分享信息和预览。");
         shareDetailPreviewArea = new TextArea();
         shareDetailPreviewArea.setEditable(false);
         shareDetailPreviewArea.setWrapText(true);
@@ -1097,15 +1052,15 @@ public class MainApp extends Application {
         SplitPane splitPane = new SplitPane(listPane, detailColumn);
         splitPane.setDividerPositions(0.62);
         page.setCenter(splitPane);
-
-        refreshShareRuleUi();
+        refreshShareStrategySummary();
         refreshShareComposeMode();
+        refreshShareComposeModalState();
         return page;
     }
 
     private Node buildRequestsPage() {
         VBox page = new VBox(18);
-        page.getChildren().add(createPageHeader(NavPage.REQUESTS, "在桌面端提交配额、带宽和管理员申请，并查看自己的审批记录。"));
+        page.getChildren().add(createPageHeader(NavPage.REQUESTS, "申请记录"));
 
         requestStatusFilterBox = new ComboBox<>(FXCollections.observableArrayList("all", "pending", "approved", "rejected"));
         requestStatusFilterBox.setValue("all");
@@ -1162,7 +1117,7 @@ public class MainApp extends Application {
 
     private Node buildAdminPage() {
         VBox page = new VBox(18);
-        page.getChildren().add(createPageHeader(NavPage.ADMIN, "管理员页沿用 Web 的分区思路，但在桌面端改成可折叠 section，方便在一个窗口里完成设置、用户和审批操作。"));
+        page.getChildren().add(createPageHeader(NavPage.ADMIN, "管理员操作"));
 
         Button refreshButton = createGhostButton("刷新管理员数据");
         refreshButton.setOnAction(event -> refreshAdminPageAsync());
@@ -1183,7 +1138,7 @@ public class MainApp extends Application {
         adminMaxUserDownloadField = new TextField();
         adminMaxUploadFileField = new TextField();
         adminAllowRegistrationCheck = new CheckBox("允许公开注册");
-        adminSettingsMetaLabel = createSecondaryValueLabel("系统设置和当前用户数会显示在这里。");
+        adminSettingsMetaLabel = createSecondaryValueLabel("显示当前系统设置。");
         Button saveSettingsButton = createPrimaryButton("保存系统设置");
         saveSettingsButton.setOnAction(event -> saveAdminSettings());
 
@@ -1259,30 +1214,239 @@ public class MainApp extends Application {
         ListView<AdminRequest> adminReviewListView = new ListView<>(pendingAdminRequestItems);
         adminReviewListView.setCellFactory(listView -> new AdminReviewCell());
 
+        adminSettingsSectionPane = createSection("系统设置", "全局默认值、上限和注册开关", settingsContent, false);
+        adminUsersSectionPane = createSection("用户管理", "更新用户额度、带宽和管理员身份", userSplit, false);
+        adminQuotaSectionPane = createSection("配额审批", "批准或拒绝用户的存储配额申请", createListPane(quotaReviewListView, pendingQuotaRequestItems, createEmptyState(emptyRequestsImage, "当前没有待审批配额申请", "待处理记录为空时会显示此状态。", "刷新", this::refreshAdminPageAsync)), false);
+        adminBandwidthSectionPane = createSection("带宽审批", "批准或拒绝用户的上传 / 下载带宽申请", createListPane(bandwidthReviewListView, pendingBandwidthRequestItems, createEmptyState(emptyRequestsImage, "当前没有待审批带宽申请", "待处理记录为空时会显示此状态。", "刷新", this::refreshAdminPageAsync)), false);
+        adminPrivilegeSectionPane = createSection("管理员审批", "批准或拒绝管理员权限申请", createListPane(adminReviewListView, pendingAdminRequestItems, createEmptyState(emptyRequestsImage, "当前没有待审批管理员申请", "待处理记录为空时会显示此状态。", "刷新", this::refreshAdminPageAsync)), false);
+
         accordion.getChildren().addAll(
-            createSection("系统设置", "全局默认值、上限和注册开关", settingsContent),
-            createSection("用户管理", "更新用户额度、带宽和管理员身份", userSplit),
-            createSection("配额审批", "批准或拒绝用户的存储配额申请", createListPane(quotaReviewListView, pendingQuotaRequestItems, createEmptyState(emptyRequestsImage, "当前没有待审批配额申请", "待处理记录为空时会显示此状态。", "刷新", this::refreshAdminPageAsync))),
-            createSection("带宽审批", "批准或拒绝用户的上传 / 下载带宽申请", createListPane(bandwidthReviewListView, pendingBandwidthRequestItems, createEmptyState(emptyRequestsImage, "当前没有待审批带宽申请", "待处理记录为空时会显示此状态。", "刷新", this::refreshAdminPageAsync))),
-            createSection("管理员审批", "批准或拒绝管理员权限申请", createListPane(adminReviewListView, pendingAdminRequestItems, createEmptyState(emptyRequestsImage, "当前没有待审批管理员申请", "待处理记录为空时会显示此状态。", "刷新", this::refreshAdminPageAsync)))
+            adminSettingsSectionPane,
+            adminUsersSectionPane,
+            adminQuotaSectionPane,
+            adminBandwidthSectionPane,
+            adminPrivilegeSectionPane
         );
+        updateAdminSectionTitles();
 
         return new AccordionWithContent(accordion);
     }
 
-    private Node buildSettingsPage() {
-        VBox page = new VBox(18);
-        page.getChildren().add(createPageHeader(NavPage.SETTINGS, "账号、服务地址、密码、同步开关、自启和启动进托盘都统一放在这里维护。"));
+    private void buildSettingsStage(String stylesheet) {
+        initializeSettingsControls();
 
+        VBox navPane = new VBox(8);
+        navPane.getStyleClass().add("settings-dialog-nav");
+
+        for (SettingsModule module : SettingsModule.values()) {
+            Button button = new Button(module.getTitle());
+            button.getStyleClass().add("settings-dialog-nav-button");
+            button.setMaxWidth(Double.MAX_VALUE);
+            button.setAlignment(Pos.CENTER_LEFT);
+            button.setOnAction(event -> showSettingsModule(module));
+            settingsModuleButtons.put(module, button);
+            navPane.getChildren().add(button);
+        }
+
+        settingsDialogTitleLabel = new Label("设置");
+        settingsDialogTitleLabel.getStyleClass().add("settings-dialog-title");
+
+        Button closeButton = createGhostButton("关闭");
+        closeButton.setOnAction(event -> closeSettingsModal());
+
+        HBox headerRow = new HBox(12, settingsDialogTitleLabel, new Region(), closeButton);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(headerRow.getChildren().get(1), Priority.ALWAYS);
+
+        settingsDialogNoticeLabel = new Label();
+        settingsDialogNoticeLabel.getStyleClass().add("page-notice");
+        settingsDialogNoticeLabel.setVisible(false);
+        settingsDialogNoticeLabel.setManaged(false);
+
+        settingsDialogContentBox = new VBox(16);
+
+        ScrollPane contentScroll = new ScrollPane(settingsDialogContentBox);
+        contentScroll.setFitToWidth(true);
+        contentScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        contentScroll.getStyleClass().addAll("page-scroll", "settings-dialog-scroll");
+
+        VBox contentPane = new VBox(16, headerRow, settingsDialogNoticeLabel, contentScroll);
+        contentPane.getStyleClass().add("settings-dialog-content");
+        VBox.setVgrow(contentScroll, Priority.ALWAYS);
+
+        HBox body = new HBox(navPane, contentPane);
+        body.getStyleClass().add("settings-dialog-body");
+        HBox.setHgrow(contentPane, Priority.ALWAYS);
+
+        StackPane root = new StackPane(body);
+        root.getStyleClass().add("settings-dialog-root");
+        root.setPadding(new Insets(20));
+
+        Scene scene = new Scene(root, 920, 680);
+        scene.getStylesheets().add(stylesheet);
+
+        settingsStage = new Stage();
+        settingsStage.initOwner(primaryStage);
+        settingsStage.initModality(Modality.WINDOW_MODAL);
+        settingsStage.setTitle("设置");
+        settingsStage.setMinWidth(860);
+        settingsStage.setMinHeight(620);
+        if (appIconImage != null) {
+            settingsStage.getIcons().add(appIconImage);
+        }
+        settingsStage.setScene(scene);
+        settingsStage.setOnHidden(event -> clearSettingsNotice());
+        showSettingsModule(activeSettingsModule);
+    }
+
+    private void buildShareComposeStage(String stylesheet) {
+        initializeShareComposeControls();
+
+        Label titleLabel = new Label("创建分享");
+        titleLabel.getStyleClass().add("settings-dialog-title");
+
+        Button closeButton = createGhostButton("关闭");
+        closeButton.setOnAction(event -> closeShareComposeModal());
+
+        HBox headerRow = new HBox(12, titleLabel, new Region(), closeButton);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(headerRow.getChildren().get(1), Priority.ALWAYS);
+
+        shareComposeNoticeLabel = new Label();
+        shareComposeNoticeLabel.getStyleClass().add("page-notice");
+        shareComposeNoticeLabel.setVisible(false);
+        shareComposeNoticeLabel.setManaged(false);
+
+        ScrollPane contentScroll = new ScrollPane(buildShareComposeDialogContent());
+        contentScroll.setFitToWidth(true);
+        contentScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        contentScroll.getStyleClass().addAll("page-scroll", "settings-dialog-scroll");
+
+        VBox contentPane = new VBox(16, headerRow, shareComposeNoticeLabel, contentScroll);
+        contentPane.getStyleClass().add("settings-dialog-content");
+        VBox.setVgrow(contentScroll, Priority.ALWAYS);
+
+        VBox body = new VBox(contentPane);
+        body.getStyleClass().add("settings-dialog-body");
+        body.setMaxWidth(760);
+        body.setMaxHeight(620);
+
+        StackPane root = new StackPane(body);
+        root.getStyleClass().add("settings-dialog-root");
+        root.setPadding(new Insets(20));
+
+        Scene scene = new Scene(root, 760, 620);
+        scene.getStylesheets().add(stylesheet);
+
+        shareComposeStage = new Stage();
+        shareComposeStage.initOwner(primaryStage);
+        shareComposeStage.initModality(Modality.WINDOW_MODAL);
+        shareComposeStage.setTitle("创建分享");
+        shareComposeStage.setMinWidth(720);
+        shareComposeStage.setMinHeight(580);
+        if (appIconImage != null) {
+            shareComposeStage.getIcons().add(appIconImage);
+        }
+        shareComposeStage.setScene(scene);
+        shareComposeStage.setOnHidden(event -> clearShareComposeNotice());
+    }
+
+    private void initializeShareComposeControls() {
+        ToggleGroup composeModeGroup = new ToggleGroup();
+        shareTextModeRadio = createChoiceButton("文本分享", composeModeGroup, selectedShareComposeMode == ShareRules.ComposeMode.TEXT);
+        shareFileModeRadio = createChoiceButton("文件分享", composeModeGroup, selectedShareComposeMode == ShareRules.ComposeMode.FILE);
+        composeModeGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue == shareFileModeRadio) {
+                selectedShareComposeMode = ShareRules.ComposeMode.FILE;
+            } else {
+                selectedShareComposeMode = ShareRules.ComposeMode.TEXT;
+            }
+            refreshShareComposeMode();
+        });
+
+        ToggleGroup strategyGroup = new ToggleGroup();
+        shareNeverStrategyRadio = createChoiceButton(
+            ShareRules.StrategyKey.NEVER.getLabel(),
+            strategyGroup,
+            selectedShareStrategy == ShareRules.StrategyKey.NEVER
+        );
+        shareExpireStrategyRadio = createChoiceButton(
+            ShareRules.StrategyKey.EXPIRE.getLabel(),
+            strategyGroup,
+            selectedShareStrategy == ShareRules.StrategyKey.EXPIRE
+        );
+        shareOnceStrategyRadio = createChoiceButton(
+            ShareRules.StrategyKey.ONCE.getLabel(),
+            strategyGroup,
+            selectedShareStrategy == ShareRules.StrategyKey.ONCE
+        );
+        strategyGroup.selectedToggleProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue == shareNeverStrategyRadio) {
+                selectedShareStrategy = ShareRules.StrategyKey.NEVER;
+            } else if (newValue == shareOnceStrategyRadio) {
+                selectedShareStrategy = ShareRules.StrategyKey.ONCE;
+            } else {
+                selectedShareStrategy = ShareRules.StrategyKey.EXPIRE;
+            }
+            refreshShareStrategySummary();
+        });
+
+        shareTextContentArea = new TextArea();
+        shareTextContentArea.setPromptText("输入要分享的文字内容");
+        shareTextContentArea.setPrefRowCount(6);
+
+        shareSelectedFileLabel = createSecondaryValueLabel("未选择文件");
+        shareStrategySummaryLabel = createSecondaryValueLabel("--");
+        shareLatestLinkLabel = createSmallMutedLabel("最近生成的链接会显示在这里。");
+    }
+
+    private Node buildShareComposeDialogContent() {
+        Button chooseFileButton = createGhostButton("选择文件");
+        chooseFileButton.setOnAction(event -> chooseShareFile());
+        Button clearFileButton = createGhostButton("清空文件");
+        clearFileButton.setOnAction(event -> applySelectedShareFile(null));
+
+        Button createShareButton = createPrimaryButton("生成分享");
+        createShareButton.setOnAction(event -> createShareAsync());
+
+        Button copyLatestLinkButton = createGhostButton("复制最近链接");
+        copyLatestLinkButton.setOnAction(event -> copyShareLink(shareLatestLinkLabel.getText()));
+        Button openLatestLinkButton = createGhostButton("打开最近链接");
+        openLatestLinkButton.setOnAction(event -> openShareLink(shareLatestLinkLabel.getText()));
+
+        HBox composeModeRow = new HBox(10, shareTextModeRadio, shareFileModeRadio);
+        HBox strategyRow = new HBox(10, shareNeverStrategyRadio, shareExpireStrategyRadio, shareOnceStrategyRadio);
+        HBox fileRow = new HBox(10, chooseFileButton, clearFileButton, shareSelectedFileLabel);
+        fileRow.setAlignment(Pos.CENTER_LEFT);
+        shareTextContentFieldRow = createLabeledField("文本内容", shareTextContentArea);
+        shareFileFieldRow = createLabeledField("文件", fileRow);
+
+        VBox composeCard = createCardBox();
+        composeCard.getChildren().addAll(
+            createLabeledField("分享类型", composeModeRow),
+            createLabeledField("分享策略", strategyRow),
+            shareStrategySummaryLabel,
+            shareTextContentFieldRow,
+            shareFileFieldRow,
+            createShareButton,
+            new HBox(10, copyLatestLinkButton, openLatestLinkButton),
+            shareLatestLinkLabel
+        );
+        configureFileDropZone(composeCard, paths -> {
+            if (!paths.isEmpty()) {
+                // 中文注释：拖入文件时直接切到文件分享模式，减少一次额外点击。
+                applySelectedShareFile(paths.get(0));
+            }
+        });
+        return composeCard;
+    }
+
+    private void initializeSettingsControls() {
         settingsAccountInfoLabel = createSecondaryValueLabel("--");
         settingsBaseUrlField = new TextField();
         settingsBaseUrlField.setPromptText("服务地址");
         settingsDeviceNameField = new TextField();
         settingsDeviceNameField.setPromptText("设备名");
-        Button saveBaseUrlButton = createPrimaryButton("保存服务地址并重新登录");
-        saveBaseUrlButton.setOnAction(event -> saveSettingsServerAddress());
-        Button saveDeviceNameButton = createGhostButton("保存设备名");
-        saveDeviceNameButton.setOnAction(event -> saveCurrentDeviceName());
 
         settingsCurrentPasswordField = new PasswordField();
         settingsCurrentPasswordField.setPromptText("当前密码");
@@ -1290,59 +1454,182 @@ public class MainApp extends Application {
         settingsNewPasswordField.setPromptText("新密码");
         settingsConfirmPasswordField = new PasswordField();
         settingsConfirmPasswordField.setPromptText("确认新密码");
-        Button changePasswordButton = createPrimaryButton("修改密码");
-        changePasswordButton.setOnAction(event -> changePassword());
 
         settingsSyncEnabledCheck = new CheckBox("启用文本同步");
+        settingsAutoUploadClipboardFilesCheck = new CheckBox("复制文件也自动上传");
         settingsAutoStartCheck = new CheckBox("开机自启");
         settingsStartInTrayCheck = new CheckBox("启动时进入托盘");
+
+        shareNeverAllowCopyCheck = new CheckBox("允许公开页复制文字");
+        shareExpireAllowCopyCheck = new CheckBox("允许公开页复制文字");
+        shareOnceAllowCopyCheck = new CheckBox("允许公开页复制文字");
+        shareOnceShowCountdownCheck = new CheckBox("首次打开后展示倒计时");
+        shareExpirePresetBox = new ComboBox<>(FXCollections.observableArrayList(ShareRules.ExpirePreset.values()));
+        shareCountdownPresetBox = new ComboBox<>(FXCollections.observableArrayList(ShareRules.CountdownPreset.values()));
+
+        // 中文注释：卡片标题已经说明了策略类型，这里只保留必要配置，避免重复文案。
+        shareNeverRuleBox = new VBox(8, shareNeverAllowCopyCheck);
+        shareExpireRuleBox = new VBox(8, createFieldLabel("过期时长"), shareExpirePresetBox, shareExpireAllowCopyCheck);
+        shareOnceRuleBox = new VBox(8, shareOnceShowCountdownCheck, createFieldLabel("倒计时"), shareCountdownPresetBox, shareOnceAllowCopyCheck);
+
+        shareNeverAllowCopyCheck.setOnAction(event -> persistShareRulesFromControls());
+        shareExpireAllowCopyCheck.setOnAction(event -> persistShareRulesFromControls());
+        shareOnceAllowCopyCheck.setOnAction(event -> persistShareRulesFromControls());
+        shareOnceShowCountdownCheck.setOnAction(event -> {
+            persistShareRulesFromControls();
+            refreshShareSettingsControls();
+        });
+        shareExpirePresetBox.setOnAction(event -> persistShareRulesFromControls());
+        shareCountdownPresetBox.setOnAction(event -> {
+            persistShareRulesFromControls();
+            refreshShareSettingsControls();
+        });
+    }
+
+    private void openSettingsModal() {
+        refreshSettingsModal();
+        showSettingsModule(activeSettingsModule);
+        settingsStage.show();
+        settingsStage.toFront();
+    }
+
+    private void closeSettingsModal() {
+        if (settingsStage != null) {
+            settingsStage.hide();
+        }
+    }
+
+    private void openShareComposeModal() {
+        refreshShareComposeModalState();
+        clearShareComposeNotice();
+        if (shareComposeStage != null) {
+            shareComposeStage.show();
+            shareComposeStage.toFront();
+        }
+    }
+
+    private void closeShareComposeModal() {
+        if (shareComposeStage != null) {
+            shareComposeStage.hide();
+        }
+    }
+
+    private void showSettingsModule(SettingsModule module) {
+        activeSettingsModule = module;
+        settingsDialogTitleLabel.setText(module.getTitle());
+        clearSettingsNotice();
+        settingsDialogContentBox.getChildren().setAll(buildSettingsModuleContent(module));
+        settingsModuleButtons.forEach((key, button) ->
+            button.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("active"), key == module)
+        );
+    }
+
+    private Node buildSettingsModuleContent(SettingsModule module) {
+        return switch (module) {
+            case SHARES -> buildShareSettingsModule();
+            case SECURITY -> buildSecuritySettingsModule();
+            case SESSION -> buildSessionSettingsModule();
+            case GENERAL -> buildGeneralSettingsModule();
+        };
+    }
+
+    private Node buildGeneralSettingsModule() {
+        Button saveBaseUrlButton = createPrimaryButton("保存服务地址");
+        saveBaseUrlButton.setOnAction(event -> saveSettingsServerAddress());
+        Button saveDeviceNameButton = createGhostButton("保存设备名");
+        saveDeviceNameButton.setOnAction(event -> saveCurrentDeviceName());
         Button saveRuntimeButton = createPrimaryButton("保存运行设置");
         saveRuntimeButton.setOnAction(event -> saveRuntimeSettings());
-        Button logoutButton = createDangerButton("退出登录");
-        logoutButton.setOnAction(event -> handleLogout(true));
 
-        page.getChildren().addAll(
+        VBox content = new VBox(16);
+        content.getChildren().addAll(
             createRequestCard("账号信息", List.of(settingsAccountInfoLabel)),
             createRequestCard("服务地址与设备名", List.of(
                 createLabeledField("服务地址", settingsBaseUrlField),
                 createLabeledField("设备名", settingsDeviceNameField),
                 new HBox(10, saveBaseUrlButton, saveDeviceNameButton)
             )),
+            createRequestCard("运行设置", List.of(
+                settingsSyncEnabledCheck,
+                settingsAutoUploadClipboardFilesCheck,
+                createSmallMutedLabel("关闭“复制文件也自动上传”后，复制文件时会直接忽略文件，只同步文本。"),
+                settingsAutoStartCheck,
+                settingsStartInTrayCheck,
+                saveRuntimeButton
+            ))
+        );
+        return content;
+    }
+
+    private Node buildShareSettingsModule() {
+        VBox content = new VBox(16);
+        Label hint = createSmallMutedLabel("分享页只保留策略选择，详细规则统一在这里维护。");
+        content.getChildren().addAll(
+            hint,
+            createRequestCard("不过期", List.of(shareNeverRuleBox)),
+            createRequestCard("过期", List.of(shareExpireRuleBox)),
+            createRequestCard("阅后即焚", List.of(shareOnceRuleBox))
+        );
+        return content;
+    }
+
+    private Node buildSecuritySettingsModule() {
+        Button changePasswordButton = createPrimaryButton("修改密码");
+        changePasswordButton.setOnAction(event -> changePassword());
+
+        VBox content = new VBox(16);
+        content.getChildren().add(
             createRequestCard("修改密码", List.of(
                 createLabeledField("当前密码", settingsCurrentPasswordField),
                 createLabeledField("新密码", settingsNewPasswordField),
                 createLabeledField("确认新密码", settingsConfirmPasswordField),
                 changePasswordButton
-            )),
-            createRequestCard("运行设置", List.of(
-                settingsSyncEnabledCheck,
-                settingsAutoStartCheck,
-                settingsStartInTrayCheck,
-                saveRuntimeButton
-            )),
-            createRequestCard("退出登录", List.of(logoutButton))
+            ))
         );
-        return wrapScrollablePage(page);
+        return content;
+    }
+
+    private Node buildSessionSettingsModule() {
+        Button logoutButton = createDangerButton("退出登录");
+        logoutButton.setOnAction(event -> handleLogout(true));
+
+        VBox content = new VBox(16);
+        content.getChildren().add(
+            createRequestCard("会话", List.of(logoutButton))
+        );
+        return content;
     }
 
     private Node createPageHeader(NavPage page, String description) {
-        VBox header = new VBox(6);
-        Label title = new Label(page.getLabel());
-        title.getStyleClass().add("page-title");
-        Label body = createBodyLabel(description);
+        VBox header = new VBox(8);
+        header.getStyleClass().add("page-header");
+        if (description != null && !description.isBlank()) {
+            Label body = new Label(description);
+            body.getStyleClass().add("page-caption");
+            body.setWrapText(true);
+            header.getChildren().add(body);
+        }
         Label noticeLabel = new Label();
         noticeLabel.getStyleClass().add("page-notice");
         noticeLabel.setVisible(false);
         noticeLabel.setManaged(false);
         pageNoticeLabels.put(page, noticeLabel);
-        header.getChildren().addAll(title, body, noticeLabel);
+        header.getChildren().add(noticeLabel);
         return header;
     }
 
     private void showPage(NavPage page, boolean forceRefresh) {
+        if (page == NavPage.SETTINGS) {
+            openSettingsModal();
+            return;
+        }
+        Node pageNode = pageNodes.get(page);
+        if (pageNode == null) {
+            return;
+        }
         currentPage = page;
         topTitleLabel.setText(page.getLabel());
-        pageContainer.getChildren().setAll(pageNodes.get(page));
+        pageContainer.getChildren().setAll(pageNode);
         navButtons.forEach((key, button) -> button.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("active"), key == page));
         refreshTopBarFromState();
         if (forceRefresh || !loadedPages.contains(page)) {
@@ -1354,7 +1641,8 @@ public class MainApp extends Application {
                 case SHARES -> refreshSharesPageAsync(sharePage);
                 case REQUESTS -> refreshRequestsPageAsync();
                 case ADMIN -> refreshAdminPageAsync();
-                case SETTINGS -> refreshSettingsPage();
+                case SETTINGS -> {
+                }
             }
         }
     }
@@ -1498,8 +1786,7 @@ public class MainApp extends Application {
         );
     }
 
-    private void refreshSettingsPage() {
-        loadedPages.add(NavPage.SETTINGS);
+    private void refreshSettingsModal() {
         AppState state = stateStore.getState();
         settingsAccountInfoLabel.setText(
             state.getUsername() + (state.isAdmin() ? " · 管理员" : " · 普通用户") +
@@ -1509,16 +1796,22 @@ public class MainApp extends Application {
         settingsBaseUrlField.setText(state.getBaseUrl());
         settingsDeviceNameField.setText(state.getDeviceName());
         settingsSyncEnabledCheck.setSelected(state.isSyncEnabled());
+        settingsAutoUploadClipboardFilesCheck.setSelected(state.isAutoUploadClipboardFiles());
         settingsAutoStartCheck.setSelected(state.isAutoStartEnabled());
         settingsStartInTrayCheck.setSelected(state.isStartInTray());
-        clearPageNotice(NavPage.SETTINGS);
+        ShareRules.Config rules = state.getShareRules();
+        shareNeverAllowCopyCheck.setSelected(rules.never().allowCopyText());
+        shareExpireAllowCopyCheck.setSelected(rules.expire().allowCopyText());
+        shareOnceAllowCopyCheck.setSelected(rules.once().allowCopyText());
+        shareOnceShowCountdownCheck.setSelected(rules.once().showCountdown());
+        shareExpirePresetBox.setValue(rules.expire().preset());
+        shareCountdownPresetBox.setValue(rules.once().countdownPreset());
+        refreshShareSettingsControls();
+        clearSettingsNotice();
     }
 
     private void applyProfileToShell(AccountProfile profile) {
         topUserLabel.setText(nonBlank(profile.username(), "未登录"));
-        topRoleLabel.setText(profile.isAdmin() ? "管理员" : "普通用户");
-        topServerLabel.setText(nonBlank(stateStore.getState().getBaseUrl(), "未配置服务地址"));
-        topSyncLabel.setText(buildSyncSummary());
         AppState state = stateStore.getState();
         stateStore.update(next -> {
             next.setUsername(profile.username());
@@ -1532,7 +1825,7 @@ public class MainApp extends Application {
             adminNavButton.setManaged(profile.isAdmin());
             adminNavButton.setVisible(profile.isAdmin());
         }
-        refreshSettingsPage();
+        refreshSettingsModal();
     }
 
     private void applyDevicesPage(PagedDevices result) {
@@ -1605,12 +1898,35 @@ public class MainApp extends Application {
         pendingQuotaRequestItems.setAll(bundle.quotaRequests());
         pendingBandwidthRequestItems.setAll(bundle.bandwidthRequests());
         pendingAdminRequestItems.setAll(bundle.adminRequests());
+        updateAdminSectionTitles();
 
         if (adminUserItems.isEmpty()) {
             updateAdminUserDetail(null);
         } else {
             adminUserListView.getSelectionModel().select(adminUserItems.get(0));
         }
+    }
+
+    private void updateAdminSectionTitles() {
+        if (adminSettingsSectionPane != null) {
+            adminSettingsSectionPane.setText("系统设置");
+        }
+        if (adminUsersSectionPane != null) {
+            adminUsersSectionPane.setText("用户管理");
+        }
+        if (adminQuotaSectionPane != null) {
+            adminQuotaSectionPane.setText(buildPendingSectionTitle("配额审批", !pendingQuotaRequestItems.isEmpty()));
+        }
+        if (adminBandwidthSectionPane != null) {
+            adminBandwidthSectionPane.setText(buildPendingSectionTitle("带宽审批", !pendingBandwidthRequestItems.isEmpty()));
+        }
+        if (adminPrivilegeSectionPane != null) {
+            adminPrivilegeSectionPane.setText(buildPendingSectionTitle("管理员审批", !pendingAdminRequestItems.isEmpty()));
+        }
+    }
+
+    private String buildPendingSectionTitle(String title, boolean hasPending) {
+        return hasPending ? title + "（待审批）" : title;
     }
 
     private void updateHistoryDetail(ClipboardItem item) {
@@ -1630,7 +1946,7 @@ public class MainApp extends Application {
     private void updateDeviceDetail(DeviceInfo device) {
         if (device == null) {
             deviceDetailTitleLabel.setText("请选择一个设备");
-            deviceDetailMetaLabel.setText("设备名、平台、设备 ID 和在线状态会显示在这里。");
+            deviceDetailMetaLabel.setText("显示设备信息。");
             deviceRenameField.setText("");
             deviceSaveButton.setDisable(true);
             deviceOfflineButton.setDisable(true);
@@ -1675,7 +1991,7 @@ public class MainApp extends Application {
     private void updateShareDetail(ShareItem share) {
         if (share == null) {
             shareDetailTitleLabel.setText("请选择一个分享");
-            shareDetailMetaLabel.setText("链接、状态、焚毁策略和预览会显示在这里。");
+            shareDetailMetaLabel.setText("显示分享信息和预览。");
             shareDetailPreviewArea.setText("");
             shareCopyLinkButton.setDisable(true);
             shareOpenLinkButton.setDisable(true);
@@ -1746,7 +2062,7 @@ public class MainApp extends Application {
                 registerMode = false;
                 loadedPages.clear();
                 showMainScene();
-                showPage(NavPage.OVERVIEW, true);
+                showPage(NavPage.HISTORY, true);
                 loginPasswordField.clear();
             },
             error -> {
@@ -1787,9 +2103,8 @@ public class MainApp extends Application {
                 showToast("设备名已更新");
                 loadedPages.remove(NavPage.DEVICES);
                 loadedPages.remove(NavPage.OVERVIEW);
-                loadedPages.remove(NavPage.SETTINGS);
                 refreshDevicesPageAsync(devicePage);
-                refreshOverviewPageAsync();
+                refreshSettingsModal();
             },
             error -> showPageNotice(NavPage.DEVICES, "修改设备名失败: " + error.getMessage())
         );
@@ -1912,41 +2227,40 @@ public class MainApp extends Application {
     private void chooseShareFile() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("选择分享文件");
-        File file = chooser.showOpenDialog(primaryStage);
+        Stage owner = shareComposeStage != null && shareComposeStage.isShowing() ? shareComposeStage : primaryStage;
+        File file = chooser.showOpenDialog(owner);
         if (file == null) {
             return;
         }
-        selectedShareComposeMode = ShareRules.ComposeMode.FILE;
-        selectedShareFilePath = file.toPath();
-        shareSelectedFileLabel.setText(file.getName());
-        refreshShareComposeMode();
+        applySelectedShareFile(file.toPath());
     }
 
     private void createShareAsync() {
+        clearShareComposeNotice();
         ShareRules.Config rules = stateStore.getState().getShareRules();
         ShareRules.PolicyPayload policy = rules.buildPolicyPayload(selectedShareStrategy, true);
         if (selectedShareComposeMode == ShareRules.ComposeMode.TEXT) {
             String text = shareTextContentArea.getText();
             if (text == null || text.isBlank()) {
-                showPageNotice(NavPage.SHARES, "请输入要分享的文字内容。");
+                showShareComposeNotice("请输入要分享的文字内容。");
                 return;
             }
             runTask(
                 () -> apiClient.createTextShare(text, policy),
                 share -> handleShareCreated(share, true),
-                error -> showPageNotice(NavPage.SHARES, "创建文本分享失败: " + error.getMessage())
+                error -> showShareComposeNotice("创建文本分享失败: " + error.getMessage())
             );
             return;
         }
 
         if (selectedShareFilePath == null) {
-            showPageNotice(NavPage.SHARES, "请先选择一个要分享的文件。");
+            showShareComposeNotice("请先选择一个要分享的文件。");
             return;
         }
         runTask(
             () -> apiClient.createFileShare(selectedShareFilePath, policy),
             share -> handleShareCreated(share, false),
-            error -> showPageNotice(NavPage.SHARES, "创建文件分享失败: " + error.getMessage())
+            error -> showShareComposeNotice("创建文件分享失败: " + error.getMessage())
         );
     }
 
@@ -1956,9 +2270,10 @@ public class MainApp extends Application {
         if (clearText) {
             shareTextContentArea.clear();
         } else {
-            selectedShareFilePath = null;
-            shareSelectedFileLabel.setText("未选择文件");
+            applySelectedShareFile(null);
         }
+        clearShareComposeNotice();
+        refreshShareComposeModalState();
         showToast("分享创建成功");
         loadedPages.remove(NavPage.SHARES);
         refreshSharesPageAsync(1);
@@ -1981,9 +2296,11 @@ public class MainApp extends Application {
     }
 
     private void submitQuotaRequest() {
+        clearPageNotice(NavPage.REQUESTS);
         long requestedMb = parseLong(requestQuotaField.getText(), 0L);
-        if (requestedMb <= 0) {
-            showPageNotice(NavPage.REQUESTS, "配额申请值必须是正整数 MB。");
+        String validationMessage = validateQuotaRequestInput(requestedMb, requestQuotaReasonArea.getText());
+        if (!validationMessage.isBlank()) {
+            showToast(validationMessage);
             return;
         }
         runTask(
@@ -1998,7 +2315,7 @@ public class MainApp extends Application {
                 loadedPages.remove(NavPage.REQUESTS);
                 refreshRequestsPageAsync();
             },
-            error -> showPageNotice(NavPage.REQUESTS, "提交配额申请失败: " + error.getMessage())
+            this::handleQuotaRequestSubmitError
         );
     }
 
@@ -2115,12 +2432,12 @@ public class MainApp extends Application {
         String newBaseUrl = settingsBaseUrlField.getText();
         String validationError = ServiceAddressFormatter.validate(newBaseUrl);
         if (!validationError.isBlank()) {
-            showPageNotice(NavPage.SETTINGS, validationError);
+            showSettingsNotice(validationError);
             return;
         }
         String normalized = ServiceAddressFormatter.normalize(newBaseUrl);
         if (normalized.equals(stateStore.getState().getBaseUrl())) {
-            showPageNotice(NavPage.SETTINGS, "服务地址没有变化。");
+            showSettingsNotice("服务地址没有变化。");
             return;
         }
         if (!confirmDanger("修改服务地址后会清理当前登录态并返回登录页，确认继续吗？")) {
@@ -2138,20 +2455,19 @@ public class MainApp extends Application {
     private void saveCurrentDeviceName() {
         String deviceName = settingsDeviceNameField.getText();
         if (deviceName == null || deviceName.isBlank()) {
-            showPageNotice(NavPage.SETTINGS, "设备名不能为空。");
+            showSettingsNotice("设备名不能为空。");
             return;
         }
         runTask(
             () -> apiClient.renameDevice(stateStore.getState().getCurrentDeviceId(), deviceName),
             device -> {
                 showToast("设备名已保存");
-                loadedPages.remove(NavPage.SETTINGS);
                 loadedPages.remove(NavPage.OVERVIEW);
                 loadedPages.remove(NavPage.DEVICES);
-                refreshSettingsPage();
-                refreshOverviewPageAsync();
+                refreshSettingsModal();
+                refreshDevicesPageAsync(devicePage);
             },
-            error -> showPageNotice(NavPage.SETTINGS, "保存设备名失败: " + error.getMessage())
+            error -> showSettingsNotice("保存设备名失败: " + error.getMessage())
         );
     }
 
@@ -2160,7 +2476,7 @@ public class MainApp extends Application {
         String newPassword = settingsNewPasswordField.getText();
         String confirmPassword = settingsConfirmPasswordField.getText();
         if (!Objects.equals(newPassword, confirmPassword)) {
-            showPageNotice(NavPage.SETTINGS, "两次输入的新密码不一致。");
+            showSettingsNotice("两次输入的新密码不一致。");
             return;
         }
         runTask(
@@ -2174,31 +2490,40 @@ public class MainApp extends Application {
                 settingsConfirmPasswordField.clear();
                 showToast("密码修改成功");
             },
-            error -> showPageNotice(NavPage.SETTINGS, "修改密码失败: " + error.getMessage())
+            error -> showSettingsNotice("修改密码失败: " + error.getMessage())
         );
     }
 
     private void saveRuntimeSettings() {
+        AppState currentState = stateStore.getState();
         boolean syncEnabled = settingsSyncEnabledCheck.isSelected();
+        boolean autoUploadClipboardFiles = settingsAutoUploadClipboardFilesCheck.isSelected();
         boolean autoStartEnabled = settingsAutoStartCheck.isSelected();
         boolean startInTray = settingsStartInTrayCheck.isSelected();
+        boolean startupRegistryChanged = autoStartEnabled != currentState.isAutoStartEnabled()
+            || (autoStartEnabled && startInTray != currentState.isStartInTray());
         try {
-            if (autoStartEnabled) {
-                WindowsStartupManager.setEnabled(true, startInTray);
-            } else if (WindowsStartupManager.isSupported()) {
-                WindowsStartupManager.remove();
+            // 中文注释：只有开机自启相关设置真的发生变化时，才去触碰系统注册表，避免“只是点了保存”也报错。
+            if (startupRegistryChanged) {
+                if (autoStartEnabled) {
+                    WindowsStartupManager.setEnabled(true, startInTray);
+                } else if (WindowsStartupManager.isSupported()) {
+                    WindowsStartupManager.remove();
+                }
             }
             stateStore.update(state -> {
                 state.setSyncEnabled(syncEnabled);
+                state.setAutoUploadClipboardFiles(autoUploadClipboardFiles);
                 state.setAutoStartEnabled(autoStartEnabled);
                 state.setStartInTray(startInTray);
             });
+            clearSettingsNotice();
             syncService.notifySettingsChanged();
             updateSyncControls();
             updateTrayMenuLabel();
             showToast("运行设置已保存");
         } catch (Exception error) {
-            showPageNotice(NavPage.SETTINGS, "保存运行设置失败: " + error.getMessage());
+            showSettingsNotice("保存运行设置失败: " + error.getMessage());
         }
     }
 
@@ -2215,9 +2540,6 @@ public class MainApp extends Application {
     private void refreshTopBarFromState() {
         AppState state = stateStore.getState();
         topUserLabel.setText(nonBlank(state.getUsername(), "未登录"));
-        topRoleLabel.setText(state.isAdmin() ? "管理员" : "普通用户");
-        topServerLabel.setText(nonBlank(state.getBaseUrl(), "未配置服务地址"));
-        topSyncLabel.setText(buildSyncSummary());
         updateSyncControls();
         updateTrayMenuLabel();
         if (adminNavButton != null) {
@@ -2227,28 +2549,77 @@ public class MainApp extends Application {
     }
 
     private void refreshShareComposeMode() {
+        if (shareTextContentFieldRow == null || shareFileFieldRow == null) {
+            return;
+        }
         boolean textMode = selectedShareComposeMode == ShareRules.ComposeMode.TEXT;
-        shareTextContentArea.setManaged(textMode);
-        shareTextContentArea.setVisible(textMode);
-        shareSelectedFileLabel.getParent().setManaged(!textMode);
-        shareSelectedFileLabel.getParent().setVisible(!textMode);
+        shareTextContentFieldRow.setManaged(textMode);
+        shareTextContentFieldRow.setVisible(textMode);
+        shareFileFieldRow.setManaged(!textMode);
+        shareFileFieldRow.setVisible(!textMode);
     }
 
-    private void refreshShareRuleUi() {
-        shareNeverRuleBox.setManaged(selectedShareStrategy == ShareRules.StrategyKey.NEVER);
-        shareNeverRuleBox.setVisible(selectedShareStrategy == ShareRules.StrategyKey.NEVER);
-        shareExpireRuleBox.setManaged(selectedShareStrategy == ShareRules.StrategyKey.EXPIRE);
-        shareExpireRuleBox.setVisible(selectedShareStrategy == ShareRules.StrategyKey.EXPIRE);
-        shareOnceRuleBox.setManaged(selectedShareStrategy == ShareRules.StrategyKey.ONCE);
-        shareOnceRuleBox.setVisible(selectedShareStrategy == ShareRules.StrategyKey.ONCE);
-        shareCountdownPresetBox.setDisable(!shareOnceShowCountdownCheck.isSelected());
+    private void refreshShareComposeModalState() {
+        if (shareTextModeRadio == null || shareFileModeRadio == null) {
+            return;
+        }
+        if (shareComposeToggleButton != null) {
+            shareComposeToggleButton.setTooltip(new Tooltip("创建分享"));
+        }
+        shareTextModeRadio.setSelected(selectedShareComposeMode == ShareRules.ComposeMode.TEXT);
+        shareFileModeRadio.setSelected(selectedShareComposeMode == ShareRules.ComposeMode.FILE);
+        shareNeverStrategyRadio.setSelected(selectedShareStrategy == ShareRules.StrategyKey.NEVER);
+        shareExpireStrategyRadio.setSelected(selectedShareStrategy == ShareRules.StrategyKey.EXPIRE);
+        shareOnceStrategyRadio.setSelected(selectedShareStrategy == ShareRules.StrategyKey.ONCE);
+        if (shareSelectedFileLabel != null) {
+            shareSelectedFileLabel.setText(
+                selectedShareFilePath == null ? "未选择文件" : nonBlank(selectedShareFilePath.getFileName().toString(), selectedShareFilePath.toString())
+            );
+        }
+        refreshShareComposeMode();
+        refreshShareStrategySummary();
+    }
 
+    private void applySelectedShareFile(Path filePath) {
+        // 中文注释：统一处理文件分享的选中状态，避免按钮选择、拖拽和创建成功后的清理逻辑分散。
+        selectedShareFilePath = filePath;
+        if (filePath != null) {
+            selectedShareComposeMode = ShareRules.ComposeMode.FILE;
+        }
+        refreshShareComposeModalState();
+    }
+
+    private void showShareComposeNotice(String message) {
+        if (shareComposeNoticeLabel == null) {
+            showToast(message);
+            return;
+        }
+        shareComposeNoticeLabel.setText(message);
+        shareComposeNoticeLabel.setVisible(true);
+        shareComposeNoticeLabel.setManaged(true);
+    }
+
+    private void clearShareComposeNotice() {
+        if (shareComposeNoticeLabel == null) {
+            return;
+        }
+        shareComposeNoticeLabel.setText("");
+        shareComposeNoticeLabel.setVisible(false);
+        shareComposeNoticeLabel.setManaged(false);
+    }
+
+    private void refreshShareSettingsControls() {
+        shareCountdownPresetBox.setDisable(!shareOnceShowCountdownCheck.isSelected());
+    }
+
+    private void refreshShareStrategySummary() {
         ShareRules.Config rules = stateStore.getState().getShareRules();
-        shareStrategySummaryLabel.setText(
-            rules.buildStrategySummary(selectedShareStrategy).title() + " · " +
-                rules.buildStrategySummary(selectedShareStrategy).description() + " · " +
-                rules.buildStrategySummary(selectedShareStrategy).copyLabel()
-        );
+        if (shareStrategySummaryLabel != null) {
+            ShareRules.StrategySummary summary = rules.buildStrategySummary(selectedShareStrategy);
+            shareStrategySummaryLabel.setText(
+                summary.title() + " · " + summary.description() + " · " + summary.copyLabel()
+            );
+        }
     }
 
     private void persistShareRulesFromControls() {
@@ -2265,16 +2636,18 @@ public class MainApp extends Application {
             )
         );
         stateStore.update(state -> state.setShareRules(updatedRules));
-        refreshShareRuleUi();
+        refreshShareSettingsControls();
+        refreshShareStrategySummary();
     }
 
     private void handleSyncDataChanged() {
-        loadedPages.remove(NavPage.OVERVIEW);
+        // 中文注释：文本同步和文件自动上传都会走这里，所以历史页和文件页都要标记为需要刷新。
         loadedPages.remove(NavPage.HISTORY);
-        if (currentPage == NavPage.OVERVIEW) {
-            refreshOverviewPageAsync();
-        } else if (currentPage == NavPage.HISTORY) {
+        loadedPages.remove(NavPage.FILES);
+        if (currentPage == NavPage.HISTORY) {
             refreshHistoryPageAsync(true);
+        } else if (currentPage == NavPage.FILES) {
+            refreshFilesPageAsync(filePage);
         } else {
             refreshTopBarFromState();
         }
@@ -2323,6 +2696,8 @@ public class MainApp extends Application {
 
     private void showLoginScene() {
         applyLoginStateToForm();
+        closeSettingsModal();
+        closeShareComposeModal();
         primaryStage.setScene(loginScene);
         primaryStage.centerOnScreen();
         primaryStage.show();
@@ -2342,7 +2717,7 @@ public class MainApp extends Application {
             loginUsernameField.setText(state.getUsername());
         }
         if (loginHintLabel != null) {
-            setLoginHint("使用当前服务地址和账号信息进入桌面控制台。", false);
+            setLoginHint("输入账号后进入控制台。", false);
         }
     }
 
@@ -2350,9 +2725,9 @@ public class MainApp extends Application {
         if (loginModeLabel == null) {
             return;
         }
-        loginModeLabel.setText(registerMode ? "注册 ClipBridge 账号" : "登录 ClipBridge");
+        loginModeLabel.setText(registerMode ? "注册" : "登录");
         loginSubmitButton.setText(registerMode ? "注册并进入" : "登录");
-        loginSwitchModeButton.setText(registerMode ? "切换到登录" : "切换到注册");
+        loginSwitchModeButton.setText(registerMode ? "返回登录" : "创建账号");
     }
 
     private void setLoginHint(String message, boolean error) {
@@ -2392,19 +2767,19 @@ public class MainApp extends Application {
             trayIcon.addActionListener(event -> Platform.runLater(this::showMainWindowFromTray));
 
             PopupMenu menu = new PopupMenu();
-            MenuItem showWindowItem = new MenuItem("显示主窗口");
+            MenuItem showWindowItem = new MenuItem("Open Window");
             showWindowItem.addActionListener(event -> Platform.runLater(this::showMainWindowFromTray));
 
-            MenuItem syncNowItem = new MenuItem("立即同步");
+            MenuItem syncNowItem = new MenuItem("Sync Now");
             syncNowItem.addActionListener(event -> Platform.runLater(() -> {
                 syncService.requestImmediateSync();
                 showToast("已触发立即同步");
             }));
 
-            trayToggleSyncMenuItem = new MenuItem("关闭同步");
+            trayToggleSyncMenuItem = new MenuItem("Disable Sync");
             trayToggleSyncMenuItem.addActionListener(event -> Platform.runLater(() -> toggleSyncEnabled(!stateStore.getState().isSyncEnabled())));
 
-            MenuItem exitItem = new MenuItem("退出");
+            MenuItem exitItem = new MenuItem("Exit");
             exitItem.addActionListener(event -> Platform.runLater(() -> {
                 if (callBestEffortLogoutOnExit()) {
                     Platform.exit();
@@ -2443,7 +2818,7 @@ public class MainApp extends Application {
 
     private void updateTrayMenuLabel() {
         if (trayToggleSyncMenuItem != null) {
-            trayToggleSyncMenuItem.setLabel(stateStore.getState().isSyncEnabled() ? "关闭同步" : "开启同步");
+            trayToggleSyncMenuItem.setLabel(stateStore.getState().isSyncEnabled() ? "Disable Sync" : "Enable Sync");
         }
     }
 
@@ -2480,6 +2855,88 @@ public class MainApp extends Application {
         label.setText("");
         label.setVisible(false);
         label.setManaged(false);
+    }
+
+    private void showSettingsNotice(String message) {
+        if (settingsDialogNoticeLabel == null) {
+            showToast(message);
+            return;
+        }
+        settingsDialogNoticeLabel.setText(message);
+        settingsDialogNoticeLabel.setVisible(true);
+        settingsDialogNoticeLabel.setManaged(true);
+    }
+
+    private void clearSettingsNotice() {
+        if (settingsDialogNoticeLabel == null) {
+            return;
+        }
+        settingsDialogNoticeLabel.setText("");
+        settingsDialogNoticeLabel.setVisible(false);
+        settingsDialogNoticeLabel.setManaged(false);
+    }
+
+    private String validateQuotaRequestInput(long requestedMb, String reason) {
+        if (requestedMb <= 0) {
+            return "配额申请值必须是正整数 MB。";
+        }
+
+        long currentQuotaBytes = stateStore.getState().getStorageQuotaBytes();
+        long requestedQuotaBytes = toQuotaBytes(requestedMb);
+        if (currentQuotaBytes > 0 && requestedQuotaBytes <= currentQuotaBytes) {
+            return "申请配额需要大于当前配额。";
+        }
+
+        if (nonBlank(reason, "").trim().length() > 500) {
+            return "申请理由不能超过 500 个字。";
+        }
+        return "";
+    }
+
+    private void handleQuotaRequestSubmitError(Throwable error) {
+        String message = resolveQuotaRequestSubmitErrorMessage(error);
+        if (shouldUseToastForQuotaRequestError(error, message)) {
+            showToast(message);
+            return;
+        }
+        showPageNotice(NavPage.REQUESTS, message);
+    }
+
+    private String resolveQuotaRequestSubmitErrorMessage(Throwable error) {
+        String rawMessage = error == null ? "" : nonBlank(error.getMessage(), "");
+        String normalized = rawMessage.toLowerCase(Locale.ROOT);
+
+        // 中文注释：后端当前对“申请值不大于当前配额”会返回通用 invalid payload，
+        // 这里改成用户能直接看懂的提示，避免出现生硬英文。
+        if (normalized.contains("request payload is invalid")
+            || (normalized.contains("quota") && normalized.contains("invalid"))) {
+            return "申请配额需要大于当前配额。";
+        }
+        if (normalized.contains("reason") && normalized.contains("500")) {
+            return "申请理由不能超过 500 个字。";
+        }
+        if (rawMessage.contains("网络异常") || rawMessage.contains("请先配置服务地址") || rawMessage.contains("登录已失效")) {
+            return rawMessage;
+        }
+        return "提交配额申请失败，请稍后重试。";
+    }
+
+    private boolean shouldUseToastForQuotaRequestError(Throwable error, String message) {
+        if (message.contains("当前配额") || message.contains("500 个字")) {
+            return true;
+        }
+        if (error instanceof ApiException apiException) {
+            return apiException.getStatusCode() > 0 && apiException.getStatusCode() < 500;
+        }
+        return false;
+    }
+
+    private long toQuotaBytes(long requestedMb) {
+        try {
+            return Math.multiplyExact(requestedMb, BYTES_PER_MB);
+        } catch (ArithmeticException ignore) {
+            return Long.MAX_VALUE;
+        }
     }
 
     private void runTask(
@@ -2543,6 +3000,51 @@ public class MainApp extends Application {
         return card;
     }
 
+    private VBox createSummaryCard(String titleText) {
+        VBox card = createCardBox();
+        card.getStyleClass().add("summary-card");
+        Label title = new Label(titleText);
+        title.getStyleClass().add("section-title");
+        card.getChildren().add(title);
+        HBox.setHgrow(card, Priority.ALWAYS);
+        return card;
+    }
+
+    private HBox createSummaryRow(String labelText, Label valueLabel) {
+        HBox row = new HBox(12);
+        row.getStyleClass().add("summary-row");
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        Label label = new Label(labelText);
+        label.getStyleClass().add("summary-row-label");
+
+        valueLabel.getStyleClass().add("summary-row-value");
+        valueLabel.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(valueLabel, Priority.ALWAYS);
+
+        row.getChildren().addAll(label, valueLabel);
+        return row;
+    }
+
+    private Button createModuleTile(NavPage page, String description) {
+        Button button = new Button();
+        button.getStyleClass().add("module-tile");
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setAlignment(Pos.TOP_LEFT);
+
+        VBox copy = new VBox(6);
+        copy.getStyleClass().add("module-tile-copy");
+        Label title = new Label(page.getLabel());
+        title.getStyleClass().add("module-tile-title");
+        Label hint = new Label(description);
+        hint.getStyleClass().add("module-tile-hint");
+        hint.setWrapText(true);
+        copy.getChildren().addAll(title, hint);
+
+        button.setGraphic(copy);
+        return button;
+    }
+
     private VBox createRequestCard(String titleText, List<Node> children) {
         VBox box = createCardBox();
         Label title = new Label(titleText);
@@ -2552,11 +3054,11 @@ public class MainApp extends Application {
         return box;
     }
 
-    private Node createSection(String titleText, String description, Node content) {
+    private TitledPane createSection(String titleText, String description, Node content, boolean expanded) {
         VBox wrapper = createCardBox();
         wrapper.getChildren().addAll(createBodyLabel(description), content);
         TitledPane pane = new TitledPane(titleText, wrapper);
-        pane.setExpanded(true);
+        pane.setExpanded(expanded);
         pane.getStyleClass().add("section-pane");
         return pane;
     }
@@ -2609,9 +3111,18 @@ public class MainApp extends Application {
         return label;
     }
 
-    private Label createBadgeLabel(String text) {
+    private VBox createMetaBlock(String titleText, Label valueLabel) {
+        VBox box = new VBox(2);
+        box.getStyleClass().add("topbar-meta-block");
+        Label title = new Label(titleText);
+        title.getStyleClass().add("topbar-meta-title");
+        box.getChildren().addAll(title, valueLabel);
+        return box;
+    }
+
+    private Label createMetaValueLabel(String text) {
         Label label = new Label(text);
-        label.getStyleClass().add("badge-label");
+        label.getStyleClass().add("topbar-meta-value");
         return label;
     }
 
@@ -2631,6 +3142,25 @@ public class MainApp extends Application {
         Button button = new Button(text);
         button.getStyleClass().addAll("app-button", "button-danger");
         return button;
+    }
+
+    private Button createIconButton(String tooltipText) {
+        Button button = new Button();
+        button.getStyleClass().addAll("app-button", "button-ghost", "icon-button");
+        if (tooltipText != null && !tooltipText.isBlank()) {
+            button.setTooltip(new Tooltip(tooltipText));
+        }
+        return button;
+    }
+
+    private SVGPath createShareIconGraphic() {
+        SVGPath path = new SVGPath();
+        // 中文注释：这里用简单矢量路径画一个“向外分享”的图标，避免额外依赖图片资源。
+        path.setContent("M4 13 L4 6 L11 6 M7 4 L14 4 L14 11 M5 13 L14 4");
+        path.getStyleClass().add("icon-shape");
+        path.setScaleX(1.2);
+        path.setScaleY(1.2);
+        return path;
     }
 
     private Button createNavButton(NavPage page) {
@@ -2867,25 +3397,25 @@ public class MainApp extends Application {
         if (overviewSyncToggleButton != null) {
             overviewSyncToggleButton.setText(state.isSyncEnabled() ? "关闭同步" : "开启同步");
         }
+        if (topSyncToggleButton != null) {
+            topSyncToggleButton.setText(state.isSyncEnabled() ? "关闭同步" : "开启同步");
+        }
+        if (statusSyncToggleButton != null) {
+            statusSyncToggleButton.setText(state.isSyncEnabled() ? "关闭同步" : "开启同步");
+        }
         if (overviewSyncValueLabel != null) {
             overviewSyncValueLabel.setText(buildSyncSummary());
+        }
+        if (statusSyncLabel != null) {
+            statusSyncLabel.setText("同步: " + buildSyncSummary());
         }
         refreshTopBarFromStateWithoutRecursion();
     }
 
     private void refreshTopBarFromStateWithoutRecursion() {
         AppState state = stateStore.getState();
-        if (topSyncLabel != null) {
-            topSyncLabel.setText(buildSyncSummary());
-        }
-        if (topServerLabel != null) {
-            topServerLabel.setText(nonBlank(state.getBaseUrl(), "未配置服务地址"));
-        }
         if (topUserLabel != null) {
             topUserLabel.setText(nonBlank(state.getUsername(), "未登录"));
-        }
-        if (topRoleLabel != null) {
-            topRoleLabel.setText(state.isAdmin() ? "管理员" : "普通用户");
         }
     }
 
@@ -3051,6 +3581,23 @@ public class MainApp extends Application {
 
         public String getLabel() {
             return label;
+        }
+    }
+
+    private enum SettingsModule {
+        GENERAL("常规"),
+        SHARES("分享"),
+        SECURITY("安全"),
+        SESSION("会话");
+
+        private final String title;
+
+        SettingsModule(String title) {
+            this.title = title;
+        }
+
+        public String getTitle() {
+            return title;
         }
     }
 
