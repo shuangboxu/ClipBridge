@@ -18,6 +18,11 @@ import com.xushuangbo.clipbridge.feature.shell.DeviceViewModel
 import com.xushuangbo.clipbridge.feature.shell.FilesViewModel
 import com.xushuangbo.clipbridge.feature.shell.HistoryViewModel
 import com.xushuangbo.clipbridge.feature.shell.MainShellRoute
+import com.xushuangbo.clipbridge.feature.shell.AdminReviewsViewModel
+import com.xushuangbo.clipbridge.feature.shell.AdminSettingsViewModel
+import com.xushuangbo.clipbridge.feature.shell.AdminUsersViewModel
+import com.xushuangbo.clipbridge.feature.shell.RequestsViewModel
+import com.xushuangbo.clipbridge.feature.shell.SharesViewModel
 import com.xushuangbo.clipbridge.feature.shell.SettingsViewModel
 
 /**
@@ -219,11 +224,58 @@ fun ClipBridgeApp(
                 ),
             )
 
+            // 分享页 ViewModel。
+            // 负责文本/文件分享创建、列表、撤销，以及本地分享规则维护。
+            val sharesViewModel: SharesViewModel = viewModel(
+                factory = SharesViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    shareCoordinator = resolvedContainer.shareCoordinator,
+                    shareRulesStore = resolvedContainer.shareRulesStore,
+                ),
+            )
+
+            val requestsViewModel: RequestsViewModel = viewModel(
+                factory = RequestsViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    authApiClient = resolvedContainer.authApiClient,
+                    requestApiClient = resolvedContainer.requestApiClient,
+                ),
+            )
+
+            val adminSettingsViewModel: AdminSettingsViewModel = viewModel(
+                factory = AdminSettingsViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    authApiClient = resolvedContainer.authApiClient,
+                    adminApiClient = resolvedContainer.adminApiClient,
+                ),
+            )
+
+            val adminUsersViewModel: AdminUsersViewModel = viewModel(
+                factory = AdminUsersViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    authApiClient = resolvedContainer.authApiClient,
+                    adminApiClient = resolvedContainer.adminApiClient,
+                ),
+            )
+
+            val adminReviewsViewModel: AdminReviewsViewModel = viewModel(
+                factory = AdminReviewsViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    authApiClient = resolvedContainer.authApiClient,
+                    adminApiClient = resolvedContainer.adminApiClient,
+                ),
+            )
+
             MainShellRoute(
                 settingsViewModel = settingsViewModel,
                 deviceViewModel = deviceViewModel,
                 historyViewModel = historyViewModel,
                 filesViewModel = filesViewModel,
+                sharesViewModel = sharesViewModel,
+                requestsViewModel = requestsViewModel,
+                adminSettingsViewModel = adminSettingsViewModel,
+                adminUsersViewModel = adminUsersViewModel,
+                adminReviewsViewModel = adminReviewsViewModel,
 
                 // 主界面里如果遇到 401、token 失效、退出登录等情况，
                 // 就跳转回 Auth 登录页。

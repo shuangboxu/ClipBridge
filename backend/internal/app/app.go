@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"clipbridge/backend/internal/admin"
 	"clipbridge/backend/internal/auth"
 	"clipbridge/backend/internal/clipboard"
 	"clipbridge/backend/internal/config"
@@ -12,6 +13,7 @@ import (
 	"clipbridge/backend/internal/files"
 	"clipbridge/backend/internal/filestore"
 	"clipbridge/backend/internal/realtime"
+	"clipbridge/backend/internal/shares"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,8 +27,10 @@ type App struct {
 	DB               *pgxpool.Pool
 	TokenManager     *auth.Manager
 	AuthService      *auth.Service
+	AdminService     *admin.Service
 	ClipboardService *clipboard.Service
 	FileService      *files.Service
+	ShareService     *shares.Service
 	RealtimeHub      *realtime.Hub
 }
 
@@ -48,22 +52,42 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	}
 
 	tokenManager := auth.NewManager(cfg.Auth.JWTSecret, cfg.Auth.AccessTokenTTL)
-	authRepo := auth.NewPostgresRepository(pool)
-	clipboardRepo := clipboard.NewPostgresRepository(pool)
-	fileRepo := files.NewPostgresRepository(pool)
 	fileStore := filestore.NewLocalStore(cfg.Files.StorageDir)
 	if err := fileStore.EnsureBaseDir(); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ensure file storage dir failed: %w", err)
 	}
 
+	adminRepo := admin.NewPostgresRepository(pool)
+	bandwidthManager := admin.NewBandwidthManager()
+	adminService := admin.NewService(adminRepo, bandwidthManager, fileStore)
+	if err := adminService.SeedSystemSettings(ctx, admin.SeedSettings{
+		DefaultStorageQuotaBytes:     admin.DefaultStorageQuotaBytes,
+		DefaultUploadBandwidthKbps:   admin.DefaultUploadBandwidthKbps,
+		DefaultDownloadBandwidthKbps: admin.DefaultDownloadBandwidthKbps,
+		MaxUserCount:                 admin.DefaultMaxUserCount,
+		MaxUserUploadBandwidthKbps:   admin.DefaultMaxUserUploadBandwidthKbps,
+		MaxUserDownloadBandwidthKbps: admin.DefaultMaxUserDownloadBandwidthKbps,
+		MaxUploadFileBytes:           cfg.Files.MaxUploadBytes,
+		AllowRegistration:            cfg.Auth.AllowRegistration,
+	}); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("seed system settings failed: %w", err)
+	}
+	authRepo := auth.NewPostgresRepository(pool)
+	clipboardRepo := clipboard.NewPostgresRepository(pool)
+	fileRepo := files.NewPostgresRepository(pool)
+	shareRepo := shares.NewPostgresRepository(pool)
+
 	return &App{
 		Config:           cfg,
 		DB:               pool,
 		TokenManager:     tokenManager,
 		AuthService:      auth.NewService(authRepo, tokenManager, cfg.Auth.RefreshTokenTTL),
+		AdminService:     adminService,
 		ClipboardService: clipboard.NewService(clipboardRepo),
-		FileService:      files.NewService(fileRepo, fileStore, cfg.Files.MaxUploadBytes),
+		FileService:      files.NewService(fileRepo, fileStore, adminService),
+		ShareService:     shares.NewService(shareRepo, fileStore, adminService),
 		RealtimeHub:      realtime.NewHub(),
 	}, nil
 }

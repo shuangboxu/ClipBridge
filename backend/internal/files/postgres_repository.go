@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"clipbridge/backend/internal/admin"
 	"clipbridge/backend/internal/id"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -56,8 +57,27 @@ func (r *PostgresRepository) CreateFile(ctx context.Context, params CreateFilePa
 		return Item{}, err
 	}
 
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Item{}, fmt.Errorf("begin create file asset failed: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if err := admin.CheckStorageQuotaTx(ctx, tx, params.UserID, params.SizeBytes); err != nil {
+		switch {
+		case errors.Is(err, admin.ErrNotFound):
+			return Item{}, ErrNotFound
+		case errors.Is(err, admin.ErrStorageQuotaExceeded):
+			return Item{}, ErrStorageQuotaExceeded
+		default:
+			return Item{}, err
+		}
+	}
+
 	var item Item
-	err = r.db.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO file_assets(
 			id,
 			user_id,
@@ -98,6 +118,9 @@ func (r *PostgresRepository) CreateFile(ctx context.Context, params CreateFilePa
 	}
 	if err != nil {
 		return Item{}, fmt.Errorf("create file asset failed: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Item{}, fmt.Errorf("commit create file asset failed: %w", err)
 	}
 	return item, nil
 }

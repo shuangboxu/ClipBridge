@@ -22,6 +22,10 @@ data class SettingsUiState(
     val username: String = "",
     val currentDeviceId: String = "",
     val deviceName: String = "",
+    val isAdmin: Boolean = false,
+    val storageQuotaBytes: Long = 0L,
+    val uploadBandwidthKbps: Int = 0,
+    val downloadBandwidthKbps: Int = 0,
     val currentPassword: String = "",
     val newPassword: String = "",
     val confirmNewPassword: String = "",
@@ -43,6 +47,22 @@ class SettingsViewModel(
     val sessionExitEvents: SharedFlow<String> = _sessionExitEvents.asSharedFlow()
     private val _toastEvents = MutableSharedFlow<String>()
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
+
+    fun reloadSessionSnapshot() {
+        val storedSession = sessionStore.readSession()
+        _uiState.update { currentState ->
+            currentState.copy(
+                serviceAddress = storedSession.baseUrl,
+                username = storedSession.username,
+                currentDeviceId = storedSession.currentDeviceId,
+                deviceName = storedSession.deviceName,
+                isAdmin = storedSession.isAdmin,
+                storageQuotaBytes = storedSession.storageQuotaBytes,
+                uploadBandwidthKbps = storedSession.uploadBandwidthKbps,
+                downloadBandwidthKbps = storedSession.downloadBandwidthKbps,
+            )
+        }
+    }
 
     fun updateServiceAddress(value: String) {
         _uiState.update { it.copy(serviceAddress = value, errorMessage = null) }
@@ -199,6 +219,10 @@ class SettingsViewModel(
             username = storedSession.username,
             currentDeviceId = storedSession.currentDeviceId,
             deviceName = storedSession.deviceName,
+            isAdmin = storedSession.isAdmin,
+            storageQuotaBytes = storedSession.storageQuotaBytes,
+            uploadBandwidthKbps = storedSession.uploadBandwidthKbps,
+            downloadBandwidthKbps = storedSession.downloadBandwidthKbps,
             syncEnabled = sessionStore.isSyncEnabled(),
         )
     }

@@ -102,6 +102,10 @@ private class FakeSyncSessionStore(
         deviceName: String,
         currentDeviceId: String,
         tokens: TokenBundle,
+        isAdmin: Boolean,
+        storageQuotaBytes: Long,
+        uploadBandwidthKbps: Int,
+        downloadBandwidthKbps: Int,
     ) {
         storedSession = StoredSession(
             baseUrl = baseUrl,
@@ -110,6 +114,10 @@ private class FakeSyncSessionStore(
             currentDeviceId = currentDeviceId,
             username = username,
             deviceName = deviceName,
+            isAdmin = isAdmin,
+            storageQuotaBytes = storageQuotaBytes,
+            uploadBandwidthKbps = uploadBandwidthKbps,
+            downloadBandwidthKbps = downloadBandwidthKbps,
         )
     }
 

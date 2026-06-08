@@ -18,4 +18,8 @@ object AppTestTags {
     const val FilesScreen = "files_screen"
     const val FilesUploadButton = "files_upload_button"
     const val FilesRefreshButton = "files_refresh_button"
+    const val ShareScreen = "share_screen"
+    const val ShareRulesScreen = "share_rules_screen"
+    const val RequestsScreen = "requests_screen"
+    const val RequestsAdminSubmitButton = "requests_admin_submit_button"
 }

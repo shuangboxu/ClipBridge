@@ -11,6 +11,7 @@ const identityContextKey contextKey = "auth_identity"
 type Identity struct {
 	UserID   string `json:"user_id"`
 	DeviceID string `json:"device_id"`
+	IsAdmin  bool   `json:"is_admin"`
 }
 
 func WithIdentity(ctx context.Context, identity Identity) context.Context {

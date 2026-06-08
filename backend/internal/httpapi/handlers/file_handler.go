@@ -24,7 +24,12 @@ type fileService interface {
 }
 
 type FileHandler struct {
-	fileService fileService
+	fileService  fileService
+	adminService fileDownloadPolicyService
+}
+
+type fileDownloadPolicyService interface {
+	PrepareDownloadWriter(ctx context.Context, userID string, dst io.Writer) (io.Writer, error)
 }
 
 type renameFileRequest struct {
@@ -46,9 +51,13 @@ func NewFileHandler(application *app.App) *FileHandler {
 	if application == nil {
 		return &FileHandler{}
 	}
-	return &FileHandler{
+	handler := &FileHandler{
 		fileService: application.FileService,
 	}
+	if application.AdminService != nil {
+		handler.adminService = application.AdminService
+	}
+	return handler
 }
 
 func (h *FileHandler) Upload(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +187,16 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 		contentType = "application/octet-stream"
 	}
 
+	writer := io.Writer(w)
+	if h.adminService != nil {
+		limitedWriter, err := h.adminService.PrepareDownloadWriter(r.Context(), result.Item.UserID, w)
+		if err != nil {
+			response.Error(w, r, http.StatusInternalServerError, "prepare download stream failed")
+			return
+		}
+		writer = limitedWriter
+	}
+
 	fileName := url.QueryEscape(result.Item.OriginalName)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(result.SizeBytes, 10))
@@ -185,7 +204,7 @@ func (h *FileHandler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, result.File); err != nil {
+	if _, err := io.Copy(writer, result.File); err != nil {
 		return
 	}
 }
@@ -249,6 +268,8 @@ func (h *FileHandler) writeFileError(w http.ResponseWriter, r *http.Request, err
 		response.Error(w, r, http.StatusNotFound, "file not found")
 	case errors.Is(err, files.ErrFileTooLarge):
 		response.Error(w, r, http.StatusRequestEntityTooLarge, "file is too large")
+	case errors.Is(err, files.ErrStorageQuotaExceeded):
+		response.Error(w, r, http.StatusRequestEntityTooLarge, "storage quota exceeded")
 	case errors.Is(err, files.ErrFileBodyMissing):
 		response.Error(w, r, http.StatusNotFound, "file body not found")
 	case isFileValidationError(err):

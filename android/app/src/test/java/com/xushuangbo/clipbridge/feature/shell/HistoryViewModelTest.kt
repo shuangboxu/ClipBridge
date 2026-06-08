@@ -352,6 +352,10 @@ private class FakeHistorySessionStore(
         deviceName: String,
         currentDeviceId: String,
         tokens: TokenBundle,
+        isAdmin: Boolean,
+        storageQuotaBytes: Long,
+        uploadBandwidthKbps: Int,
+        downloadBandwidthKbps: Int,
     ) {
         storedSession = StoredSession(
             baseUrl = baseUrl,
@@ -360,6 +364,10 @@ private class FakeHistorySessionStore(
             currentDeviceId = currentDeviceId,
             username = username,
             deviceName = deviceName,
+            isAdmin = isAdmin,
+            storageQuotaBytes = storageQuotaBytes,
+            uploadBandwidthKbps = uploadBandwidthKbps,
+            downloadBandwidthKbps = downloadBandwidthKbps,
         )
     }
 

@@ -3,11 +3,15 @@ package auth
 import "time"
 
 type User struct {
-	ID           string
-	Username     string
-	PasswordHash string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                    string
+	Username              string
+	PasswordHash          string
+	IsAdmin               bool
+	StorageQuotaBytes     int64
+	UploadBandwidthKbps   int
+	DownloadBandwidthKbps int
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type Device struct {

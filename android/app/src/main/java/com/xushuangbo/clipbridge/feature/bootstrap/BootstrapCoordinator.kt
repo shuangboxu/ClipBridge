@@ -41,6 +41,10 @@ class BootstrapCoordinator(
                 deviceName = currentSession.deviceName,
                 currentDeviceId = account.currentDeviceId,
                 tokens = tokens,
+                isAdmin = account.isAdmin,
+                storageQuotaBytes = account.storageQuotaBytes,
+                uploadBandwidthKbps = account.uploadBandwidthKbps,
+                downloadBandwidthKbps = account.downloadBandwidthKbps,
             )
 
             BootstrapState.Ready()

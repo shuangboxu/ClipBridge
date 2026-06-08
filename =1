@@ -1,0 +1,37 @@
+/srv/clipbridge/backend:
+total 12
+drwxrwxr-x+ 3 clipbridge clipbridge 4096 May 23 07:12 .
+drwxr-xr-x+ 7 root       root       4096 May 23 07:12 ..
+drwxrwxrwx+ 5 opc        opc        4096 May 29 08:41 current
+
+/srv/clipbridge/backend/current:
+total 28960
+drwxrwxrwx+  5 opc        opc            4096 May 29 08:41 .
+drwxrwxr-x+  3 clipbridge clipbridge     4096 May 23 07:12 ..
+-rw-rw-r--+  1 ubuntu     ubuntu          439 May 29 08:41 .env
+-rw-rw-r--+  1 ubuntu     ubuntu          567 May 29 08:41 .env.example
+-rw-rw-r--+  1 ubuntu     ubuntu         4584 May 29 08:41 README.md
+-rwxrwxr-x   1 ubuntu     ubuntu     14799979 May 29 08:41 clipbridge-api
+-rwxrwxr-x+  1 ubuntu     ubuntu     14799115 May 29 08:41 clipbridge-api.backup-20260529T084105Z
+drwxrwxrwx+  4 opc        opc            4096 May 22 08:52 cmd
+-rw-rw-r--+  1 ubuntu     ubuntu          712 May 29 08:41 go.mod
+-rw-rw-r--+  1 ubuntu     ubuntu         2539 May 29 08:41 go.sum
+drwxrwxrwx+ 10 opc        opc            4096 May 25 00:54 internal
+drwxrwxrwx+  3 opc        opc            4096 May 22 09:05 third_party
+
+/srv/clipbridge/web:
+total 12
+drwxrwxr-x+ 3 clipbridge clipbridge 4096 May 23 07:12 .
+drwxr-xr-x+ 7 root       root       4096 May 23 07:12 ..
+drwxrwxr-x+ 4 ubuntu     ubuntu     4096 May 28 02:12 current
+
+/srv/clipbridge/web/current:
+total 60
+drwxrwxr-x+ 4 ubuntu     ubuntu      4096 May 28 02:12 .
+drwxrwxr-x+ 3 clipbridge clipbridge  4096 May 23 07:12 ..
+-rwxrwxr-x+ 1 ubuntu     ubuntu      3254 May 28 01:51 README.md
+drwxrwxr-x+ 4 ubuntu     ubuntu      4096 May 23 06:55 assets
+-rwxrwxr-x+ 1 ubuntu     ubuntu       395 May 23 08:12 index.html
+drwxrwxr-x+ 7 ubuntu     ubuntu      4096 May 25 01:08 src
+-rwxrwxr-x+ 1 ubuntu     ubuntu     36469 May 28 02:40 styles.css
+---

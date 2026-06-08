@@ -21,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -30,9 +31,15 @@ import com.xushuangbo.clipbridge.ui.components.PageErrorBanner
 @Composable
 internal fun SettingsScreen(
     innerPadding: PaddingValues,
+    uiState: SettingsUiState,
     onOpenDetailPage: (DetailPage) -> Unit,
+    onRefreshSessionSnapshot: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    LaunchedEffect(Unit) {
+        onRefreshSessionSnapshot()
+    }
+
     val accountEntries = listOf(
         SettingEntry("账号信息", DetailPage.AccountInfo),
         SettingEntry("安全", DetailPage.Security),
@@ -42,11 +49,17 @@ internal fun SettingsScreen(
     val commonEntries = listOf(
         SettingEntry("文件", DetailPage.Files),
         SettingEntry("分享", DetailPage.Share),
+        SettingEntry("分享规则", DetailPage.ShareRules),
     )
-    val managementEntries = listOf(
-        SettingEntry("全局设置", DetailPage.GlobalSettings),
-        SettingEntry("审批", DetailPage.Approvals),
-    )
+    val managementEntries = if (uiState.isAdmin) {
+        listOf(
+            SettingEntry("全局设置", DetailPage.GlobalSettings),
+            SettingEntry("用户管理", DetailPage.UserManagement),
+            SettingEntry("审批", DetailPage.Approvals),
+        )
+    } else {
+        emptyList()
+    }
 
     Column(
         modifier = Modifier
@@ -59,8 +72,11 @@ internal fun SettingsScreen(
         Spacer(modifier = Modifier.height(22.dp))
         SettingsSection(title = "通用", entries = commonEntries, onEntryClick = { entry -> onOpenDetailPage(entry.detailPage) })
         Spacer(modifier = Modifier.height(22.dp))
-        SettingsSection(title = "管理", entries = managementEntries, onEntryClick = { entry -> onOpenDetailPage(entry.detailPage) })
-        Spacer(modifier = Modifier.height(28.dp))
+        if (managementEntries.isNotEmpty()) {
+            SettingsSection(title = "管理", entries = managementEntries, onEntryClick = { entry -> onOpenDetailPage(entry.detailPage) })
+            Spacer(modifier = Modifier.height(22.dp))
+        }
+        Spacer(modifier = Modifier.height(6.dp))
         Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
             Icon(imageVector = Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
@@ -93,6 +109,14 @@ internal fun AccountInfoScreen(
                 InfoRow("用户名", uiState.username.ifBlank { "未读取到账号信息" })
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                 InfoRow("设备名称", uiState.deviceName.ifBlank { "android-phone" })
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                InfoRow("账号角色", if (uiState.isAdmin) "管理员" else "普通用户")
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                InfoRow("存储配额", formatShellBytes(uiState.storageQuotaBytes))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                InfoRow("上传带宽", formatShellKbps(uiState.uploadBandwidthKbps))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+                InfoRow("下载带宽", formatShellKbps(uiState.downloadBandwidthKbps))
             }
         }
 

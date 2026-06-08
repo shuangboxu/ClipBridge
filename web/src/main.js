@@ -4,6 +4,7 @@ import { ensureValidAccessToken, request, requestRaw } from "./services/api.js";
 import {
     clearPending,
     closeFilePanel,
+    closeSharePanel,
     clearSettingsPasswordForm,
     clearSession,
     closeSettingsModal,
@@ -12,17 +13,28 @@ import {
     isPending,
     openClipboardPanel,
     openFilePanel,
+    openSharePanel,
     openSettingsModal,
     openDevicePanel,
     saveSidebarCollapsed,
+    selectShareStrategy,
     selectSettingsCategory,
+    setAdminPanelOpen,
     setPending,
     setSession,
     state,
+    toggleShareRulePanel,
     updateSessionUser,
+    updateShareRules,
     updateSettingsPasswordForm,
     updateSessionDevice
 } from "./state/store.js";
+import {
+    decryptFileWithPassword,
+    decryptTextWithPassword,
+    encryptFileWithPassword,
+    encryptTextWithPassword
+} from "./utils/crypto.js";
 import {
     buildWebSocketURL,
     createDefaultDeviceName,
@@ -41,6 +53,7 @@ let realtimePingTimerID = 0;
 let clipboardAutoAckTimerID = 0;
 let clipboardAutoAckInFlight = false;
 let clipboardAutoPullPromise = null;
+let publicShareCountdownTimerID = 0;
 
 export function bootstrap() {
     registerEventListeners();
@@ -54,7 +67,7 @@ export function bootstrap() {
 }
 
 export async function startApplication() {
-    state.route = normalizeRoute(window.location.hash);
+    applyParsedRoute(parseRoute(window.location.hash));
     render();
     await handleRouteChange();
 }
@@ -74,6 +87,47 @@ function registerEventListeners() {
     document.addEventListener("submit", (event) => {
         const form = event.target;
         if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        if (form.id === "quota-request-form") {
+            event.preventDefault();
+            void handleQuotaRequestSubmit(form);
+            return;
+        }
+        if (form.id === "bandwidth-request-form") {
+            event.preventDefault();
+            void handleBandwidthRequestSubmit(form);
+            return;
+        }
+        if (form.id === "admin-request-form") {
+            event.preventDefault();
+            void handleAdminRequestSubmit(form);
+            return;
+        }
+        if (form.id === "admin-settings-form") {
+            event.preventDefault();
+            void handleAdminSettingsSubmit(form);
+            return;
+        }
+        if (form.classList.contains("admin-user-form")) {
+            event.preventDefault();
+            void handleAdminUserSubmit(form);
+            return;
+        }
+        if (form.dataset.adminReviewType === "quota") {
+            event.preventDefault();
+            void handleAdminQuotaApprove(form);
+            return;
+        }
+        if (form.dataset.adminReviewType === "bandwidth") {
+            event.preventDefault();
+            void handleAdminBandwidthApprove(form);
+            return;
+        }
+        if (form.dataset.adminReviewType === "admin") {
+            event.preventDefault();
+            void handleAdminPrivilegeApprove(form);
             return;
         }
 
@@ -101,6 +155,10 @@ function registerEventListeners() {
             case "password-change-form":
                 event.preventDefault();
                 void handlePasswordChangeSubmit(form);
+                return;
+            case "share-compose-form":
+                event.preventDefault();
+                void handleShareComposeSubmit(form);
                 return;
             default:
                 return;
@@ -197,6 +255,26 @@ function registerEventListeners() {
                 closeFilePanel();
                 render();
                 break;
+            case "open-share-panel":
+                openSharePanel();
+                render();
+                break;
+            case "close-share-panel":
+                closeSharePanel();
+                render();
+                break;
+            case "select-share-strategy":
+                selectShareStrategy(target.getAttribute("data-strategy") || "expire");
+                render();
+                break;
+            case "toggle-share-rule-panel":
+                toggleShareRulePanel(target.getAttribute("data-rule-key") || "");
+                render();
+                break;
+            case "clear-share-file":
+                setSelectedShareFiles([]);
+                render();
+                break;
             case "download-file":
                 void handleFileDownload(target.getAttribute("data-file-id") || "");
                 break;
@@ -209,11 +287,26 @@ function registerEventListeners() {
             case "files-next":
                 void handleFilesNext();
                 break;
+            case "shares-prev":
+                void handleSharesPrev();
+                break;
+            case "shares-next":
+                void handleSharesNext();
+                break;
             case "force-device-offline":
                 void handleForceDeviceOffline(target.getAttribute("data-device-id") || "");
                 break;
             case "reload-history":
                 void loadClipboardHistory({ silent: false });
+                break;
+            case "reload-shares":
+                void loadShares({ silent: false });
+                break;
+            case "reload-requests":
+                void loadRequests({ silent: false });
+                break;
+            case "reload-admin":
+                void loadAdminData({ silent: false });
                 break;
             case "history-prev":
                 void handleHistoryPrev();
@@ -226,6 +319,42 @@ function registerEventListeners() {
                 break;
             case "copy-clipboard-item":
                 void handleCopyClipboardItem(target.getAttribute("data-item-id") || "");
+                break;
+            case "apply-share-filter":
+                void handleApplyShareFilter();
+                break;
+            case "copy-share-link":
+                void handleCopyShareLink(target.getAttribute("data-share-token") || "");
+                break;
+            case "open-share-link":
+                handleOpenShareLink(target.getAttribute("data-share-token") || "");
+                break;
+            case "revoke-share":
+                void handleRevokeShare(target.getAttribute("data-share-id") || "");
+                break;
+            case "open-public-share":
+                void handleOpenPublicShare();
+                break;
+            case "download-public-share-file":
+                void handleDownloadPublicShareFile(target.getAttribute("data-file-id") || "");
+                break;
+            case "copy-public-share-text":
+                void handleCopyPublicShareText();
+                break;
+            case "delete-admin-user":
+                void handleAdminUserDelete(
+                    target.getAttribute("data-user-id") || "",
+                    target.getAttribute("data-username") || ""
+                );
+                break;
+            case "reject-quota-request":
+                void handleAdminReviewReject("quota", target.getAttribute("data-request-id") || "", target.closest("form"));
+                break;
+            case "reject-bandwidth-request":
+                void handleAdminReviewReject("bandwidth", target.getAttribute("data-request-id") || "", target.closest("form"));
+                break;
+            case "reject-admin-request":
+                void handleAdminReviewReject("admin", target.getAttribute("data-request-id") || "", target.closest("form"));
                 break;
             case "logout":
                 void handleLogout();
@@ -240,12 +369,167 @@ function registerEventListeners() {
             state.pageError = null;
             closeSettingsModal();
             render();
+            return;
         }
+
+        if (event.key === "Escape" && state.shares.panelOpen) {
+            closeSharePanel();
+            render();
+        }
+    });
+
+    document.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement) && !(target instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (syncRequestsFormDraft(target) || syncAdminSettingsDraft(target) || syncAdminUserDraft(target)) {
+            return;
+        }
+
+        switch (target.id) {
+            case "share-text-content":
+                state.shares.textDraft = target.value;
+                break;
+            case "share-password":
+                state.shares.password = target.value;
+                break;
+            case "share-status-filter":
+                state.shares.status = target.value || "all";
+                break;
+            case "public-share-password":
+                state.publicShare.password = target.value;
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (syncRequestsFormDraft(target) || syncAdminSettingsDraft(target) || syncAdminUserDraft(target)) {
+            render();
+            return;
+        }
+
+        switch (target.id) {
+            case "share-rule-never-allow-copy":
+                updateShareRules("never", {
+                    allowCopyText: target.checked
+                });
+                render();
+                break;
+            case "share-rule-expire-allow-copy":
+                updateShareRules("expire", {
+                    allowCopyText: target.checked
+                });
+                render();
+                break;
+            case "share-rule-expire-hours":
+                updateShareRules("expire", {
+                    expireHours: Number(target.value || 24)
+                });
+                render();
+                break;
+            case "share-rule-once-show-countdown":
+                updateShareRules("once", {
+                    showCountdown: target.checked
+                });
+                render();
+                break;
+            case "share-rule-once-countdown-seconds":
+                updateShareRules("once", {
+                    countdownSeconds: Number(target.value || 10)
+                });
+                render();
+                break;
+            case "share-rule-once-allow-copy":
+                updateShareRules("once", {
+                    allowCopyText: target.checked
+                });
+                render();
+                break;
+            case "share-file-input": {
+                setSelectedShareFiles(Array.from(target.files || []));
+                render();
+                break;
+            }
+            case "share-status-filter":
+                state.shares.status = target.value || "all";
+                break;
+            default:
+                break;
+        }
+    });
+
+    document.addEventListener("toggle", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLDetailsElement)) {
+            return;
+        }
+
+        const panelKey = target.dataset.adminPanel;
+        if (!panelKey) {
+            return;
+        }
+
+        setAdminPanelOpen(panelKey, target.open);
+    });
+
+    document.addEventListener("dragenter", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("[data-share-dropzone]") : null;
+        if (!target || !state.shares.panelOpen) {
+            return;
+        }
+        event.preventDefault();
+        state.shares.dragActive = true;
+        render();
+    });
+
+    document.addEventListener("dragover", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("[data-share-dropzone]") : null;
+        if (!target || !state.shares.panelOpen) {
+            return;
+        }
+        event.preventDefault();
+        if (!state.shares.dragActive) {
+            state.shares.dragActive = true;
+            render();
+        }
+    });
+
+    document.addEventListener("dragleave", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("[data-share-dropzone]") : null;
+        if (!target || !state.shares.panelOpen) {
+            return;
+        }
+        const nextTarget = event.relatedTarget instanceof Element ? event.relatedTarget.closest("[data-share-dropzone]") : null;
+        if (nextTarget === target) {
+            return;
+        }
+        state.shares.dragActive = false;
+        render();
+    });
+
+    document.addEventListener("drop", (event) => {
+        const target = event.target instanceof Element ? event.target.closest("[data-share-dropzone]") : null;
+        if (!target || !state.shares.panelOpen) {
+            return;
+        }
+        event.preventDefault();
+        state.shares.dragActive = false;
+        setSelectedShareFiles(Array.from(event.dataTransfer?.files || []));
+        render();
     });
 }
 
 async function handleRouteChange() {
-    state.route = normalizeRoute(window.location.hash);
+    applyParsedRoute(parseRoute(window.location.hash));
     if (preservePageErrorOnNextRouteChange) {
         preservePageErrorOnNextRouteChange = false;
     } else {
@@ -260,6 +544,23 @@ async function handleRouteChange() {
     if (state.route !== "files") {
         closeFilePanel();
     }
+    if (state.route !== "shares") {
+        closeSharePanel();
+    }
+    if (state.route !== "public-share") {
+        clearPublicShareCountdown();
+        resetPublicShareOpenedContent();
+    }
+
+    if (state.route === "public-share") {
+        disconnectRealtime();
+        state.isBootstrapping = true;
+        render();
+        await loadPublicShareMeta({ silent: true });
+        state.isBootstrapping = false;
+        render();
+        return;
+    }
 
     if (PROTECTED_ROUTES.has(state.route) && !state.session) {
         disconnectRealtime();
@@ -270,7 +571,14 @@ async function handleRouteChange() {
     }
 
     if (state.session) {
-        if (state.route === "devices" || state.route === "history" || state.route === "files") {
+        if (
+            state.route === "devices" ||
+            state.route === "history" ||
+            state.route === "files" ||
+            state.route === "shares" ||
+            state.route === "requests" ||
+            state.route === "admin"
+        ) {
             state.isBootstrapping = true;
             render();
         }
@@ -287,6 +595,14 @@ async function handleRouteChange() {
             return;
         }
 
+        if (state.route === "admin" && !isCurrentUserAdmin()) {
+            state.isBootstrapping = false;
+            state.pageError = "当前账号没有管理员权限。";
+            render();
+            navigate(DEFAULT_ROUTE, { preserveError: true });
+            return;
+        }
+
         if (state.route === "devices") {
             await loadDevices({ silent: true });
         }
@@ -295,6 +611,15 @@ async function handleRouteChange() {
         }
         if (state.route === "files") {
             await loadFiles({ silent: true });
+        }
+        if (state.route === "shares") {
+            await loadShares({ silent: true });
+        }
+        if (state.route === "requests") {
+            await loadRequests({ silent: true });
+        }
+        if (state.route === "admin") {
+            await loadAdminData({ silent: true });
         }
     } else if (state.route !== AUTH_ROUTE) {
         navigate(AUTH_ROUTE);
@@ -477,14 +802,24 @@ async function ensureAuthenticated(options = {}) {
         render();
     }
 
+    return refreshCurrentProfile({ handleAuthFailure: true });
+}
+
+async function refreshCurrentProfile(options = {}) {
     try {
         const data = await request("/v1/account/me");
         state.profile = data;
+        if (data.user) {
+            updateSessionUser(data.user);
+        }
         return true;
     } catch (error) {
-        console.warn("load current account failed", error);
-        handleAuthExpired("登录已失效，请重新登录。");
-        return false;
+        if (options.handleAuthFailure) {
+            console.warn("load current account failed", error);
+            handleAuthExpired("登录已失效，请重新登录。");
+            return false;
+        }
+        throw error;
     }
 }
 
@@ -555,6 +890,172 @@ async function loadFiles(options = {}) {
         state.pageError = toUserMessage(error);
     } finally {
         if (!options.silent && isPending("files")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function loadShares(options = {}) {
+    if (!state.session) {
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("shares");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const query = new URLSearchParams({
+            page: String(state.shares.page),
+            page_size: String(state.shares.pageSize),
+            status: state.shares.status || "all"
+        });
+        const data = await request(`/v1/shares?${query.toString()}`);
+        const pagination = data.pagination || {};
+        const summary = data.summary || {};
+        const items = Array.isArray(data.shares) ? data.shares : [];
+
+        state.shares.items = items;
+        state.shares.page = Number(pagination.page || state.shares.page || 1);
+        state.shares.pageSize = Number(pagination.page_size || state.shares.pageSize || 20);
+        state.shares.total = Number(pagination.total || 0);
+        state.shares.totalPages = Number(pagination.total_pages || 0);
+        state.shares.status = String(pagination.status || state.shares.status || "all");
+        state.shares.maxUploadBytes = Number(summary.max_upload_bytes || 0);
+
+        if (state.shares.page > 1 && state.shares.totalPages > 0 && state.shares.page > state.shares.totalPages) {
+            state.shares.page = state.shares.totalPages;
+            await loadShares({ silent: true });
+            return;
+        }
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent && isPending("shares")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function loadRequests(options = {}) {
+    if (!state.session) {
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("requests");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const [quotaData, bandwidthData, adminData] = await Promise.all([
+            request("/v1/account/quota-requests?status=all"),
+            request("/v1/account/bandwidth-requests?status=all"),
+            request("/v1/account/admin-requests?status=all")
+        ]);
+
+        state.requests.quotaRequests = Array.isArray(quotaData.requests) ? quotaData.requests : [];
+        state.requests.bandwidthRequests = Array.isArray(bandwidthData.requests) ? bandwidthData.requests : [];
+        state.requests.adminRequests = Array.isArray(adminData.requests) ? adminData.requests : [];
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent && isPending("requests")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function loadAdminData(options = {}) {
+    if (!state.session) {
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("admin");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const [settingsData, usersData, quotaData, bandwidthData, adminData] = await Promise.all([
+            request("/v1/admin/settings"),
+            request("/v1/admin/users"),
+            request("/v1/admin/quota-requests?status=pending"),
+            request("/v1/admin/bandwidth-requests?status=pending"),
+            request("/v1/admin/admin-requests?status=pending")
+        ]);
+
+        state.admin.settings = settingsData.settings || null;
+        state.admin.currentUserCount = Number(settingsData.current_user_count || 0);
+        if (state.admin.settings) {
+            state.admin.settingsForm = createAdminSettingsDraft(state.admin.settings);
+        }
+
+        state.admin.users = Array.isArray(usersData.users) ? usersData.users : [];
+        state.admin.userDrafts = createAdminUserDrafts(state.admin.users);
+        state.admin.quotaRequests = Array.isArray(quotaData.requests) ? quotaData.requests : [];
+        state.admin.bandwidthRequests = Array.isArray(bandwidthData.requests) ? bandwidthData.requests : [];
+        state.admin.adminRequests = Array.isArray(adminData.requests) ? adminData.requests : [];
+    } catch (error) {
+        if (error?.status === 403) {
+            state.pageError = "当前账号没有管理员权限。";
+            render();
+            navigate(DEFAULT_ROUTE, { preserveError: true });
+            return;
+        }
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent && isPending("admin")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function loadPublicShareMeta(options = {}) {
+    const token = String(state.publicShare.token || "").trim();
+    if (!token) {
+        state.pageError = "缺少分享 token，请检查链接是否完整。";
+        state.publicShare.meta = null;
+        resetPublicShareOpenedContent();
+        clearPublicShareCountdown();
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("public-share-meta");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const data = await request(`/v1/public/shares/${encodeURIComponent(token)}/meta`, {
+            withAuth: false
+        });
+        resetPublicShareOpenedContent();
+        state.publicShare.meta = data.share || null;
+        syncPublicShareCountdown(state.publicShare.meta);
+        if (canAutoOpenPublicShare(state.publicShare.meta)) {
+            await openPublicShareContent({ silent: true });
+        }
+    } catch (error) {
+        clearPublicShareCountdown();
+        state.publicShare.meta = null;
+        resetPublicShareOpenedContent();
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent && isPending("public-share-meta")) {
             clearPending();
         }
         render();
@@ -730,6 +1231,436 @@ async function handleForceDeviceOffline(deviceID) {
         state.pageError = toUserMessage(error);
     } finally {
         if (isPending("device-offline")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleQuotaRequestSubmit(form) {
+    const formData = new FormData(form);
+    const requestedQuotaMB = String(formData.get("requested_quota_mb") || "").trim();
+    const reason = String(formData.get("reason") || "").trim();
+
+    state.requests.quotaForm = {
+        requestedQuotaMB,
+        reason
+    };
+
+    setPending("quota-request-create");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request("/v1/account/quota-requests", {
+            method: "POST",
+            body: {
+                requested_quota_mb: Number(requestedQuotaMB || 0),
+                reason
+            }
+        });
+
+        state.requests.quotaForm = {
+            requestedQuotaMB: "",
+            reason: ""
+        };
+        await loadRequests({ silent: true });
+        showToast("存储配额申请已提交。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("quota-request-create")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleBandwidthRequestSubmit(form) {
+    const formData = new FormData(form);
+    const requestedUploadKbps = String(formData.get("requested_upload_kbps") || "").trim();
+    const requestedDownloadKbps = String(formData.get("requested_download_kbps") || "").trim();
+    const reason = String(formData.get("reason") || "").trim();
+
+    state.requests.bandwidthForm = {
+        requestedUploadKbps,
+        requestedDownloadKbps,
+        reason
+    };
+
+    setPending("bandwidth-request-create");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request("/v1/account/bandwidth-requests", {
+            method: "POST",
+            body: {
+                requested_upload_kbps: Number(requestedUploadKbps || 0),
+                requested_download_kbps: Number(requestedDownloadKbps || 0),
+                reason
+            }
+        });
+
+        state.requests.bandwidthForm = {
+            requestedUploadKbps: "",
+            requestedDownloadKbps: "",
+            reason: ""
+        };
+        await loadRequests({ silent: true });
+        showToast("带宽申请已提交。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("bandwidth-request-create")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminRequestSubmit(form) {
+    if (isCurrentUserAdmin()) {
+        state.pageError = "当前账号已经是管理员，无需再次申请。";
+        render();
+        return;
+    }
+
+    const formData = new FormData(form);
+    const reason = String(formData.get("reason") || "").trim();
+    state.requests.adminForm = { reason };
+
+    setPending("admin-request-create");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request("/v1/account/admin-requests", {
+            method: "POST",
+            body: { reason }
+        });
+
+        state.requests.adminForm = { reason: "" };
+        await loadRequests({ silent: true });
+        showToast("管理员申请已提交。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("admin-request-create")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminSettingsSubmit(form) {
+    const draft = syncAdminSettingsDraftFromForm(form);
+
+    setPending("admin-settings-save");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request("/v1/admin/settings", {
+            method: "PUT",
+            body: {
+                max_user_count: Number(draft.maxUserCount || 0),
+                default_storage_quota_mb: Number(draft.defaultStorageQuotaMB || 0),
+                default_upload_bandwidth_kbps: Number(draft.defaultUploadBandwidthKbps || 0),
+                default_download_bandwidth_kbps: Number(draft.defaultDownloadBandwidthKbps || 0),
+                max_user_upload_bandwidth_kbps: Number(draft.maxUserUploadBandwidthKbps || 0),
+                max_user_download_bandwidth_kbps: Number(draft.maxUserDownloadBandwidthKbps || 0),
+                max_upload_file_mb: Number(draft.maxUploadFileMB || 0),
+                allow_registration: Boolean(draft.allowRegistration)
+            }
+        });
+
+        state.admin.settings = data.settings || null;
+        state.admin.currentUserCount = Number(data.current_user_count || state.admin.currentUserCount || 0);
+        if (state.admin.settings) {
+            state.admin.settingsForm = createAdminSettingsDraft(state.admin.settings);
+        }
+        await refreshCurrentProfile({ handleAuthFailure: true });
+        showToast("系统设置已保存。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("admin-settings-save")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminUserSubmit(form) {
+    const userID = String(form.dataset.adminUserId || "").trim();
+    if (!userID) {
+        state.pageError = "用户不存在或已被移除。";
+        render();
+        return;
+    }
+
+    const draft = syncAdminUserDraftFromForm(form);
+    const pendingKey = `admin-user-save:${userID}`;
+
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request(`/v1/admin/users/${encodeURIComponent(userID)}`, {
+            method: "PATCH",
+            body: {
+                storage_quota_mb: Number(draft.storageQuotaMB || 0),
+                upload_bandwidth_kbps: Number(draft.uploadBandwidthKbps || 0),
+                download_bandwidth_kbps: Number(draft.downloadBandwidthKbps || 0),
+                is_admin: Boolean(draft.isAdmin)
+            }
+        });
+
+        const updatedUser = data.user || null;
+        const isCurrentUser = updatedUser?.id && updatedUser.id === state.session?.user?.id;
+        if (isCurrentUser && !updatedUser.is_admin) {
+            disconnectRealtime();
+            clearSession();
+            state.profile = null;
+            if (isPending(pendingKey)) {
+                clearPending();
+            }
+            showToast("当前账号的管理员权限已被取消，请重新登录。");
+            navigate(AUTH_ROUTE);
+            return;
+        }
+
+        await loadAdminData({ silent: true });
+        if (isCurrentUser) {
+            await refreshCurrentProfile({ handleAuthFailure: true });
+        }
+        showToast("用户信息已更新。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminUserDelete(userID, username) {
+    if (!userID) {
+        state.pageError = "用户不存在或已被移除。";
+        render();
+        return;
+    }
+
+    if (!window.confirm(`确认删除用户“${username || userID}”吗？该用户的文件、分享和申请记录会一并清理。`)) {
+        return;
+    }
+
+    const pendingKey = `admin-user-delete:${userID}`;
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request(`/v1/admin/users/${encodeURIComponent(userID)}`, {
+            method: "DELETE"
+        });
+
+        if (userID === state.session?.user?.id) {
+            disconnectRealtime();
+            clearSession();
+            state.profile = null;
+            if (isPending(pendingKey)) {
+                clearPending();
+            }
+            showToast("当前账号已删除，请重新登录。");
+            navigate(AUTH_ROUTE);
+            return;
+        }
+
+        await loadAdminData({ silent: true });
+        showToast("用户已删除。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminQuotaApprove(form) {
+    const requestID = String(form.dataset.requestId || "").trim();
+    if (!requestID) {
+        state.pageError = "申请不存在或已被处理。";
+        render();
+        return;
+    }
+
+    const formData = new FormData(form);
+    const approvedQuotaMB = String(formData.get("approved_quota_mb") || "").trim();
+    const reviewNote = String(formData.get("review_note") || "").trim();
+    const pendingKey = `admin-review:quota:${requestID}`;
+
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const body = { review_note: reviewNote };
+        if (approvedQuotaMB !== "") {
+            body.approved_quota_mb = Number(approvedQuotaMB);
+        }
+
+        await request(`/v1/admin/quota-requests/${encodeURIComponent(requestID)}/approve`, {
+            method: "POST",
+            body
+        });
+
+        await Promise.all([
+            loadAdminData({ silent: true }),
+            refreshCurrentProfile({ handleAuthFailure: true })
+        ]);
+        showToast("配额申请已批准。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminBandwidthApprove(form) {
+    const requestID = String(form.dataset.requestId || "").trim();
+    if (!requestID) {
+        state.pageError = "申请不存在或已被处理。";
+        render();
+        return;
+    }
+
+    const formData = new FormData(form);
+    const approvedUploadKbps = String(formData.get("approved_upload_kbps") || "").trim();
+    const approvedDownloadKbps = String(formData.get("approved_download_kbps") || "").trim();
+    const reviewNote = String(formData.get("review_note") || "").trim();
+    const pendingKey = `admin-review:bandwidth:${requestID}`;
+
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const body = { review_note: reviewNote };
+        if (approvedUploadKbps !== "") {
+            body.approved_upload_kbps = Number(approvedUploadKbps);
+        }
+        if (approvedDownloadKbps !== "") {
+            body.approved_download_kbps = Number(approvedDownloadKbps);
+        }
+
+        await request(`/v1/admin/bandwidth-requests/${encodeURIComponent(requestID)}/approve`, {
+            method: "POST",
+            body
+        });
+
+        await Promise.all([
+            loadAdminData({ silent: true }),
+            refreshCurrentProfile({ handleAuthFailure: true })
+        ]);
+        showToast("带宽申请已批准。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminPrivilegeApprove(form) {
+    const requestID = String(form.dataset.requestId || "").trim();
+    if (!requestID) {
+        state.pageError = "申请不存在或已被处理。";
+        render();
+        return;
+    }
+
+    const formData = new FormData(form);
+    const reviewNote = String(formData.get("review_note") || "").trim();
+    const pendingKey = `admin-review:admin:${requestID}`;
+
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request(`/v1/admin/admin-requests/${encodeURIComponent(requestID)}/approve`, {
+            method: "POST",
+            body: {
+                review_note: reviewNote
+            }
+        });
+
+        await Promise.all([
+            loadAdminData({ silent: true }),
+            refreshCurrentProfile({ handleAuthFailure: true })
+        ]);
+        showToast("管理员申请已批准。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleAdminReviewReject(type, requestID, form) {
+    if (!requestID) {
+        state.pageError = "申请不存在或已被处理。";
+        render();
+        return;
+    }
+
+    const pendingKey = `admin-review:${type}:${requestID}`;
+    const reviewNote = form instanceof HTMLFormElement
+        ? String(new FormData(form).get("review_note") || "").trim()
+        : "";
+
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request(buildAdminReviewEndpoint(type, requestID, "reject"), {
+            method: "POST",
+            body: {
+                review_note: reviewNote
+            }
+        });
+
+        await loadAdminData({ silent: true });
+        showToast("申请已拒绝。");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
             clearPending();
         }
         render();
@@ -931,6 +1862,277 @@ async function handleFileDelete(fileID) {
     }
 }
 
+async function handleShareComposeSubmit(form) {
+    const formData = new FormData(form);
+    const textContent = String(formData.get("text_content") || "");
+    const selectedFiles = Array.isArray(state.shares.selectedFiles) ? state.shares.selectedFiles : [];
+    state.shares.textDraft = textContent;
+
+    if (textContent === "" && selectedFiles.length === 0) {
+        state.pageError = "请至少输入文字，或拖入一个文件。";
+        render();
+        return;
+    }
+
+    setPending("share-create");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const payload = await buildShareComposePayload(textContent, selectedFiles);
+        const data = await request("/v1/shares", {
+            method: "POST",
+            body: payload
+        });
+
+        state.shares.textDraft = "";
+        state.shares.password = "";
+        state.shares.selectedFiles = [];
+        state.shares.dragActive = false;
+        state.shares.panelOpen = false;
+        state.shares.page = 1;
+        state.shares.latestShareToken = data.share?.token || "";
+
+        const fileInput = form.querySelector("input[name='files']");
+        if (fileInput instanceof HTMLInputElement) {
+            fileInput.value = "";
+        }
+
+        await loadShares({ silent: true });
+        showToast(resolveShareCreatedMessage(textContent, selectedFiles));
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
+async function handleApplyShareFilter() {
+    if (isPending("shares")) {
+        return;
+    }
+
+    state.shares.page = 1;
+    await loadShares({ silent: false });
+}
+
+async function handleSharesPrev() {
+    if (state.shares.page <= 1 || isPending("shares")) {
+        return;
+    }
+
+    state.shares.page -= 1;
+    await loadShares({ silent: false });
+}
+
+async function handleSharesNext() {
+    if ((state.shares.totalPages > 0 && state.shares.page >= state.shares.totalPages) || isPending("shares")) {
+        return;
+    }
+
+    state.shares.page += 1;
+    await loadShares({ silent: false });
+}
+
+async function handleCopyShareLink(token) {
+    const publicLink = buildPublicShareLink(token);
+    if (!publicLink) {
+        state.pageError = "分享链接无效，无法复制。";
+        render();
+        return;
+    }
+
+    try {
+        await writeTextToClipboard(publicLink);
+        showToast("分享链接已复制");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+        render();
+    }
+}
+
+function handleOpenShareLink(token) {
+    const publicLink = buildPublicShareLink(token);
+    if (!publicLink) {
+        state.pageError = "分享链接无效，无法打开。";
+        render();
+        return;
+    }
+
+    window.open(publicLink, "_blank", "noopener");
+}
+
+async function handleRevokeShare(shareID) {
+    const share = state.shares.items.find((item) => item.id === shareID);
+    if (!share) {
+        state.pageError = "分享不存在或已被移除。";
+        render();
+        return;
+    }
+
+    const shareLabel = resolveShareListLabel(share);
+    if (!window.confirm(`确认撤销分享“${shareLabel}”吗？`)) {
+        return;
+    }
+
+    setPending("share-revoke");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        await request(`/v1/shares/${encodeURIComponent(shareID)}/revoke`, {
+            method: "POST"
+        });
+        await loadShares({ silent: true });
+        showToast("分享已撤销");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
+async function handleOpenPublicShare() {
+    await openPublicShareContent({ silent: false });
+}
+
+async function openPublicShareContent(options = {}) {
+    const token = String(state.publicShare.token || "").trim();
+    const share = state.publicShare.meta;
+    if (!token || !share) {
+        state.pageError = "分享信息尚未准备好，请刷新后重试。";
+        render();
+        return;
+    }
+
+    if (!share.has_text_content && !share.has_file_content) {
+        state.pageError = "当前分享没有可打开的内容。";
+        render();
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("public-share-open");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const hadBurnDeadline = Boolean(share.burn_deadline);
+        const data = await request(`/v1/public/shares/${encodeURIComponent(token)}/open`, {
+            method: "POST",
+            withAuth: false,
+            body: buildPublicShareOpenBody()
+        });
+
+        const nextShare = data.share || null;
+        const accessToken = String(data.access_token || "").trim();
+        if (!nextShare || !accessToken) {
+            throw new Error("服务端没有返回完整的分享内容。");
+        }
+
+        resetPublicShareOpenedContent();
+        state.publicShare.meta = {
+            ...state.publicShare.meta,
+            ...nextShare
+        };
+        state.publicShare.accessToken = accessToken;
+        state.publicShare.accessTokenExpiresAt = String(data.access_token_expires_at || "");
+        state.publicShare.textContent = nextShare.has_text_content
+            ? (nextShare.is_encrypted
+                ? await decryptTextWithPassword(nextShare.encrypted_payload || "", nextShare.encryption || {}, state.publicShare.password || "")
+                : String(nextShare.text_content || ""))
+            : "";
+        state.publicShare.contentOpen = true;
+
+        // 首次打开倒计时分享时，用户真正看到内容往往会晚于服务端记录的 first_opened_at。
+        // 这里把“展示给用户的倒计时起点”单独记下来，避免请求/解密耗时把 10 秒直接吃掉几秒。
+        state.publicShare.countdownDisplayDeadlineAt = resolvePublicShareDisplayDeadline(nextShare, hadBurnDeadline);
+        syncPublicShareCountdown(state.publicShare.meta);
+        await preparePublicShareFilePreviews(token, accessToken, nextShare, state.publicShare.password || "");
+        if (!options.silent) {
+            showToast("分享内容已打开");
+        }
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleDownloadPublicShareFile(fileID) {
+    const token = String(state.publicShare.token || "").trim();
+    const share = state.publicShare.meta;
+    const accessToken = String(state.publicShare.accessToken || "").trim();
+    const file = findPublicShareFile(fileID);
+    if (!token || !share || !accessToken || !file) {
+        state.pageError = "分享文件尚未准备好，请重新打开分享。";
+        render();
+        return;
+    }
+
+    const pendingKey = `public-share-download:${fileID}`;
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const filePath = buildPublicShareFilePath(token, fileID, accessToken, { download: true });
+        if (!share.is_encrypted) {
+            triggerBrowserDownload(buildPublicShareFileURL(token, fileID, accessToken, { download: true }));
+            showToast(`开始下载：${resolvePublicShareFileName(file)}`);
+            return;
+        }
+
+        const response = await requestRaw(filePath, {
+            withAuth: false
+        });
+        const encryptedBlob = await response.blob();
+        const fileEncryption = buildFileEncryptionFromHeaders(response.headers);
+        const fileName = resolvePublicShareFileName(file, response.headers);
+        const contentType = response.headers.get("X-Share-File-Content-Type") || file.content_type || "application/octet-stream";
+        const decryptedBytes = await decryptFileWithPassword(encryptedBlob, fileEncryption, state.publicShare.password || "");
+        downloadBlobToFile(new Blob([decryptedBytes], { type: contentType }), fileName);
+        showToast(`开始下载：${fileName}`);
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        clearPending();
+        render();
+    }
+}
+
+async function handleCopyPublicShareText() {
+    if (!state.publicShare.meta?.allow_copy_content) {
+        state.pageError = "当前分享不允许复制文本。";
+        render();
+        return;
+    }
+
+    if (!state.publicShare.contentOpen || !state.publicShare.textContent) {
+        state.pageError = "请先打开分享内容。";
+        render();
+        return;
+    }
+
+    try {
+        await writeTextToClipboard(state.publicShare.textContent);
+        showToast("分享文本已复制");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+        render();
+    }
+}
+
 async function handleReadSystemClipboard() {
     setPending("clipboard-read");
     state.pageError = null;
@@ -1003,6 +2205,183 @@ async function handleFilesNext() {
     closeFilePanel();
     state.files.page += 1;
     await loadFiles({ silent: false });
+}
+
+function isCurrentUserAdmin() {
+    return Boolean(state.profile?.user?.is_admin || state.session?.user?.is_admin);
+}
+
+function syncRequestsFormDraft(target) {
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLTextAreaElement) && !(target instanceof HTMLSelectElement)) {
+        return false;
+    }
+
+    if (target.closest("#quota-request-form")) {
+        state.requests.quotaForm = {
+            ...state.requests.quotaForm,
+            requestedQuotaMB: target.name === "requested_quota_mb" ? target.value : state.requests.quotaForm.requestedQuotaMB,
+            reason: target.name === "reason" ? target.value : state.requests.quotaForm.reason
+        };
+        return true;
+    }
+
+    if (target.closest("#bandwidth-request-form")) {
+        state.requests.bandwidthForm = {
+            ...state.requests.bandwidthForm,
+            requestedUploadKbps: target.name === "requested_upload_kbps" ? target.value : state.requests.bandwidthForm.requestedUploadKbps,
+            requestedDownloadKbps: target.name === "requested_download_kbps" ? target.value : state.requests.bandwidthForm.requestedDownloadKbps,
+            reason: target.name === "reason" ? target.value : state.requests.bandwidthForm.reason
+        };
+        return true;
+    }
+
+    if (target.closest("#admin-request-form")) {
+        state.requests.adminForm = {
+            ...state.requests.adminForm,
+            [target.name]: target.value
+        };
+        return true;
+    }
+
+    return false;
+}
+
+function syncAdminSettingsDraft(target) {
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
+        return false;
+    }
+
+    if (!target.closest("#admin-settings-form")) {
+        return false;
+    }
+
+    state.admin.settingsForm = {
+        ...state.admin.settingsForm,
+        [normalizeAdminSettingsFieldName(target.name || target.id)]: target instanceof HTMLInputElement && target.type === "checkbox"
+            ? target.checked
+            : target.value
+    };
+    return true;
+}
+
+function syncAdminSettingsDraftFromForm(form) {
+    const formData = new FormData(form);
+    state.admin.settingsForm = {
+        maxUserCount: String(formData.get("max_user_count") || "").trim(),
+        defaultStorageQuotaMB: String(formData.get("default_storage_quota_mb") || "").trim(),
+        defaultUploadBandwidthKbps: String(formData.get("default_upload_bandwidth_kbps") || "").trim(),
+        defaultDownloadBandwidthKbps: String(formData.get("default_download_bandwidth_kbps") || "").trim(),
+        maxUserUploadBandwidthKbps: String(formData.get("max_user_upload_bandwidth_kbps") || "").trim(),
+        maxUserDownloadBandwidthKbps: String(formData.get("max_user_download_bandwidth_kbps") || "").trim(),
+        maxUploadFileMB: String(formData.get("max_upload_file_mb") || "").trim(),
+        allowRegistration: formData.get("allow_registration") !== null
+    };
+    return state.admin.settingsForm;
+}
+
+function syncAdminUserDraft(target) {
+    if (!(target instanceof HTMLInputElement) && !(target instanceof HTMLSelectElement)) {
+        return false;
+    }
+
+    const form = target.closest(".admin-user-form");
+    if (!(form instanceof HTMLFormElement)) {
+        return false;
+    }
+
+    syncAdminUserDraftFromForm(form);
+    return true;
+}
+
+function syncAdminUserDraftFromForm(form) {
+    const userID = String(form.dataset.adminUserId || "").trim();
+    const formData = new FormData(form);
+    const nextDraft = {
+        storageQuotaMB: String(formData.get("storage_quota_mb") || "").trim(),
+        uploadBandwidthKbps: String(formData.get("upload_bandwidth_kbps") || "").trim(),
+        downloadBandwidthKbps: String(formData.get("download_bandwidth_kbps") || "").trim(),
+        isAdmin: formData.get("is_admin") !== null
+    };
+
+    state.admin.userDrafts = {
+        ...state.admin.userDrafts,
+        [userID]: nextDraft
+    };
+    return nextDraft;
+}
+
+function createAdminSettingsDraft(settings) {
+    return {
+        maxUserCount: String(settings.max_user_count || ""),
+        defaultStorageQuotaMB: String(bytesToMegabytes(settings.default_storage_quota_bytes)),
+        defaultUploadBandwidthKbps: String(settings.default_upload_bandwidth_kbps || ""),
+        defaultDownloadBandwidthKbps: String(settings.default_download_bandwidth_kbps || ""),
+        maxUserUploadBandwidthKbps: String(settings.max_user_upload_bandwidth_kbps || ""),
+        maxUserDownloadBandwidthKbps: String(settings.max_user_download_bandwidth_kbps || ""),
+        maxUploadFileMB: String(bytesToMegabytes(settings.max_upload_file_bytes)),
+        allowRegistration: Boolean(settings.allow_registration)
+    };
+}
+
+function createAdminUserDrafts(users) {
+    const drafts = {};
+    for (const user of Array.isArray(users) ? users : []) {
+        drafts[user.id] = {
+            storageQuotaMB: String(bytesToMegabytes(user.storage_quota_bytes)),
+            uploadBandwidthKbps: String(user.upload_bandwidth_kbps || ""),
+            downloadBandwidthKbps: String(user.download_bandwidth_kbps || ""),
+            isAdmin: Boolean(user.is_admin)
+        };
+    }
+    return drafts;
+}
+
+function normalizeAdminSettingsFieldName(name) {
+    switch (String(name || "").trim()) {
+        case "max_user_count":
+            return "maxUserCount";
+        case "default_storage_quota_mb":
+            return "defaultStorageQuotaMB";
+        case "default_upload_bandwidth_kbps":
+            return "defaultUploadBandwidthKbps";
+        case "default_download_bandwidth_kbps":
+            return "defaultDownloadBandwidthKbps";
+        case "max_user_upload_bandwidth_kbps":
+            return "maxUserUploadBandwidthKbps";
+        case "max_user_download_bandwidth_kbps":
+            return "maxUserDownloadBandwidthKbps";
+        case "max_upload_file_mb":
+            return "maxUploadFileMB";
+        case "allow_registration":
+            return "allowRegistration";
+        default:
+            return String(name || "");
+    }
+}
+
+function buildAdminReviewEndpoint(type, requestID, action) {
+    const normalizedType = String(type || "").trim();
+    const normalizedID = encodeURIComponent(String(requestID || "").trim());
+    const normalizedAction = String(action || "").trim();
+
+    switch (normalizedType) {
+        case "quota":
+            return `/v1/admin/quota-requests/${normalizedID}/${normalizedAction}`;
+        case "bandwidth":
+            return `/v1/admin/bandwidth-requests/${normalizedID}/${normalizedAction}`;
+        case "admin":
+            return `/v1/admin/admin-requests/${normalizedID}/${normalizedAction}`;
+        default:
+            return "";
+    }
+}
+
+function bytesToMegabytes(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return 0;
+    }
+    return Math.max(Math.round(bytes / (1024 * 1024)), 1);
 }
 
 async function ensureRealtimeConnection(options = {}) {
@@ -1376,6 +2755,7 @@ function findFileItem(fileID) {
 
 function handleAuthExpired(message) {
     disconnectRealtime();
+    clearPublicShareCountdown();
     clearSession();
     state.profile = null;
     state.devices = [];
@@ -1416,16 +2796,463 @@ function scheduleToastDismiss() {
     }, 3200);
 }
 
-function normalizeRoute(hashValue) {
-    const route = (hashValue || "").replace(/^#\/?/, "").trim().toLowerCase();
-    if (!route) {
-        return state.session ? DEFAULT_ROUTE : AUTH_ROUTE;
+function buildPublicShareOpenBody() {
+    const password = String(state.publicShare.password || "").trim();
+    const payload = {};
+    if (password) {
+        payload.password = password;
+    }
+    return payload;
+}
+
+async function buildShareComposePayload(textContent, files) {
+    const shareStrategy = buildShareStrategyPayload();
+    const password = String(state.shares.password || "").trim();
+    const isEncrypted = password !== "";
+    const normalizedFiles = Array.isArray(files) ? files.filter((file) => file instanceof File) : [];
+    if (isEncrypted && password.length < 4) {
+        throw new Error("分享密码至少需要 4 位。");
     }
 
-    if (PROTECTED_ROUTES.has(route) || route === AUTH_ROUTE) {
-        return route;
+    const payload = new FormData();
+    payload.append("is_encrypted", String(isEncrypted));
+    payload.append("never_expires", String(shareStrategy.never_expires));
+    payload.append("burn_mode", shareStrategy.burn_mode);
+    payload.append("allow_copy_content", String(shareStrategy.allow_copy_content));
+    if (!shareStrategy.never_expires) {
+        payload.append("expire_seconds", String(shareStrategy.expire_seconds));
     }
-    return state.session ? DEFAULT_ROUTE : AUTH_ROUTE;
+    if (shareStrategy.burn_mode === "countdown") {
+        payload.append("burn_after_seconds", String(shareStrategy.burn_after_seconds));
+    }
+
+    if (isEncrypted) {
+        payload.append("password", password);
+    }
+
+    if (textContent !== "") {
+        if (isEncrypted) {
+            const encryptedText = await encryptTextWithPassword(textContent, password);
+            payload.append("text_encrypted_payload", encryptedText.encryptedPayload);
+            payload.append("text_encryption", JSON.stringify(encryptedText.encryption));
+        } else {
+            payload.append("text_content", textContent);
+        }
+    }
+
+    if (normalizedFiles.length > 0) {
+        const manifest = [];
+        for (const file of normalizedFiles) {
+            let uploadFile = file;
+            let fileEncryption = null;
+            if (isEncrypted) {
+                const encryptedFile = await encryptFileWithPassword(file, password);
+                uploadFile = encryptedFile.encryptedFile;
+                fileEncryption = encryptedFile.encryption;
+            }
+
+            payload.append("files", uploadFile, uploadFile.name);
+            manifest.push({
+                original_name: file.name || "share.bin",
+                original_content_type: file.type || "application/octet-stream",
+                encryption: fileEncryption
+            });
+        }
+        payload.append("files_manifest", JSON.stringify(manifest));
+    }
+
+    return payload;
+}
+
+function buildShareStrategyPayload() {
+    const strategyKey = String(state.shares.strategyKey || "expire");
+    const rules = state.shareRules || {};
+
+    if (strategyKey === "never") {
+        const rule = rules.never || {};
+        return {
+            never_expires: true,
+            expire_seconds: 0,
+            burn_mode: "none",
+            burn_after_seconds: 0,
+            allow_copy_content: Boolean(rule.allowCopyText)
+        };
+    }
+
+    if (strategyKey === "once") {
+        const rule = rules.once || {};
+        const countdownSecondsValue = Number(rule.countdownSeconds || 10);
+        const countdownSeconds = Number.isFinite(countdownSecondsValue) && countdownSecondsValue > 0 ? countdownSecondsValue : 10;
+        return {
+            never_expires: true,
+            expire_seconds: 0,
+            burn_mode: rule.showCountdown ? "countdown" : "once",
+            burn_after_seconds: rule.showCountdown ? countdownSeconds : 0,
+            allow_copy_content: Boolean(rule.allowCopyText)
+        };
+    }
+
+    const rule = rules.expire || {};
+    const expireHoursValue = Number(rule.expireHours || 24);
+    const expireHours = Number.isFinite(expireHoursValue) && expireHoursValue > 0 ? expireHoursValue : 24;
+    return {
+        never_expires: false,
+        expire_seconds: Math.round(expireHours * 3600),
+        burn_mode: "none",
+        burn_after_seconds: 0,
+        allow_copy_content: Boolean(rule.allowCopyText)
+    };
+}
+
+function resolveShareCreatedMessage(textContent, files) {
+    const fileCount = Array.isArray(files) ? files.length : 0;
+    if (textContent !== "" && fileCount > 0) {
+        return fileCount === 1 ? "文件和文字分享已生成" : `${fileCount} 个文件和文字分享已生成`;
+    }
+    if (fileCount > 0) {
+        return fileCount === 1 ? "文件分享已生成" : `${fileCount} 个文件分享已生成`;
+    }
+    return "文字分享已生成";
+}
+
+function resolveShareListLabel(share) {
+    if (share?.has_file_content) {
+        const files = Array.isArray(share.files) ? share.files : [];
+        if (files.length > 1) {
+            return `${files[0]?.original_name || "文件分享"} 等 ${files.length} 个文件`;
+        }
+        return share.file?.original_name || files[0]?.original_name || (share.has_text_content ? "文件 + 文字分享" : "文件分享");
+    }
+    return share?.text_preview || "文字分享";
+}
+
+function parseRoute(hashValue) {
+    const rawRoute = (hashValue || "").replace(/^#\/?/, "").trim();
+    if (!rawRoute) {
+        return {
+            route: state.session ? DEFAULT_ROUTE : AUTH_ROUTE,
+            publicShareToken: ""
+        };
+    }
+
+    if (rawRoute.toLowerCase().startsWith("public/")) {
+        const rawToken = rawRoute.slice("public/".length).trim();
+        return {
+            route: "public-share",
+            publicShareToken: decodeHeaderValue(rawToken)
+        };
+    }
+
+    const route = rawRoute.toLowerCase();
+    if (PROTECTED_ROUTES.has(route) || route === AUTH_ROUTE) {
+        return {
+            route,
+            publicShareToken: ""
+        };
+    }
+    return {
+        route: state.session ? DEFAULT_ROUTE : AUTH_ROUTE,
+        publicShareToken: ""
+    };
+}
+
+function applyParsedRoute(parsedRoute) {
+    state.route = parsedRoute?.route || (state.session ? DEFAULT_ROUTE : AUTH_ROUTE);
+    if (state.route === "public-share") {
+        const nextToken = String(parsedRoute?.publicShareToken || "").trim();
+        if (state.publicShare.token !== nextToken) {
+            resetPublicShareOpenedContent();
+            state.publicShare.token = nextToken;
+            state.publicShare.meta = null;
+            state.publicShare.password = "";
+        }
+        return;
+    }
+
+    resetPublicShareOpenedContent();
+    state.publicShare.token = "";
+    state.publicShare.meta = null;
+    state.publicShare.password = "";
+}
+
+function buildPublicShareLink(token) {
+    const normalizedToken = String(token || "").trim();
+    if (!normalizedToken) {
+        return "";
+    }
+    return `${window.location.origin}${window.location.pathname}#/public/${encodeURIComponent(normalizedToken)}`;
+}
+
+function syncPublicShareCountdown(share) {
+    clearPublicShareCountdown();
+    if (!share) {
+        return;
+    }
+
+    const deadlineAt = resolvePublicShareCountdownDeadline(share);
+    if (!Number.isFinite(deadlineAt) || deadlineAt <= Date.now()) {
+        return;
+    }
+
+    updatePublicShareRemaining(deadlineAt);
+    publicShareCountdownTimerID = window.setInterval(() => {
+        updatePublicShareRemaining(deadlineAt);
+    }, 1000);
+}
+
+function clearPublicShareCountdown() {
+    if (publicShareCountdownTimerID) {
+        window.clearInterval(publicShareCountdownTimerID);
+        publicShareCountdownTimerID = 0;
+    }
+}
+
+function updatePublicShareRemaining(deadlineAt) {
+    if (!state.publicShare.meta) {
+        clearPublicShareCountdown();
+        return;
+    }
+
+    const remainingSeconds = Math.max(Math.ceil((deadlineAt - Date.now()) / 1000), 0);
+    state.publicShare.meta = {
+        ...state.publicShare.meta,
+        remaining_seconds: remainingSeconds
+    };
+
+    if (remainingSeconds > 0) {
+        if (state.route === "public-share") {
+            render();
+        }
+        return;
+    }
+
+    clearPublicShareCountdown();
+    state.publicShare.meta = {
+        ...state.publicShare.meta,
+        status: state.publicShare.meta.burn_mode === "countdown" ? "consumed" : "expired",
+        remaining_seconds: 0
+    };
+    if (state.publicShare.contentOpen) {
+        resetPublicShareOpenedContent();
+        state.pageError = "分享倒计时已结束，内容已自动隐藏。";
+    }
+    if (state.route === "public-share") {
+        render();
+    }
+}
+
+function resolveShareDeadline(share) {
+    const expiresAt = Date.parse(share?.expires_at || "");
+    const burnDeadline = Date.parse(share?.burn_deadline || "");
+    if (Number.isFinite(expiresAt) && Number.isFinite(burnDeadline)) {
+        return Math.min(expiresAt, burnDeadline);
+    }
+    if (Number.isFinite(expiresAt)) {
+        return expiresAt;
+    }
+    if (Number.isFinite(burnDeadline)) {
+        return burnDeadline;
+    }
+    return Number.NaN;
+}
+
+function resolvePublicShareDisplayDeadline(share, hadBurnDeadline) {
+    if ((share?.burn_mode || "").toLowerCase() !== "countdown") {
+        return 0;
+    }
+
+    const configuredSeconds = Math.max(Number(share?.burn_after_seconds || 0), 0);
+    const remainingSeconds = Math.max(Number(share?.remaining_seconds || 0), 0);
+    const visibleSeconds = hadBurnDeadline ? remainingSeconds : Math.max(configuredSeconds, remainingSeconds);
+    if (visibleSeconds <= 0) {
+        return 0;
+    }
+
+    return Date.now() + visibleSeconds * 1000;
+}
+
+function resolvePublicShareCountdownDeadline(share) {
+    if (
+        state.publicShare.contentOpen &&
+        (share?.burn_mode || "").toLowerCase() === "countdown" &&
+        Number.isFinite(state.publicShare.countdownDisplayDeadlineAt) &&
+        state.publicShare.countdownDisplayDeadlineAt > Date.now()
+    ) {
+        return state.publicShare.countdownDisplayDeadlineAt;
+    }
+
+    return resolveShareDeadline(share);
+}
+
+function decodeHeaderValue(value) {
+    const normalized = String(value || "");
+    if (!normalized) {
+        return "";
+    }
+
+    try {
+        return decodeURIComponent(normalized);
+    } catch (error) {
+        return normalized;
+    }
+}
+
+function downloadBlobToFile(blob, fileName) {
+    const objectURL = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectURL;
+    link.download = fileName || "download.bin";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectURL);
+}
+
+function triggerBrowserDownload(url) {
+    const link = document.createElement("a");
+    link.href = url;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+}
+
+function setSelectedShareFiles(files) {
+    state.shares.selectedFiles = Array.isArray(files)
+        ? files.filter((file) => file instanceof File)
+        : [];
+}
+
+function resetPublicShareOpenedContent() {
+    revokePublicSharePreviewURLs();
+    state.publicShare.accessToken = "";
+    state.publicShare.accessTokenExpiresAt = "";
+    state.publicShare.textContent = "";
+    state.publicShare.contentOpen = false;
+    state.publicShare.filePreviews = {};
+    state.publicShare.previewLoadingMap = {};
+    state.publicShare.previewErrorMap = {};
+    state.publicShare.countdownDisplayDeadlineAt = 0;
+}
+
+function revokePublicSharePreviewURLs() {
+    const previews = state.publicShare.filePreviews || {};
+    for (const previewURL of Object.values(previews)) {
+        if (typeof previewURL === "string" && previewURL.startsWith("blob:")) {
+            URL.revokeObjectURL(previewURL);
+        }
+    }
+}
+
+function canAutoOpenPublicShare(share) {
+    return Boolean(share) &&
+        share.status === "active" &&
+        !share.requires_password &&
+        (share.has_text_content || share.has_file_content);
+}
+
+function findPublicShareFile(fileID) {
+    const files = Array.isArray(state.publicShare.meta?.files) ? state.publicShare.meta.files : [];
+    return files.find((file) => file.id === fileID) || null;
+}
+
+function isPreviewablePublicShareFile(file) {
+    return Boolean(file?.is_image || file?.is_video);
+}
+
+async function preparePublicShareFilePreviews(publicToken, accessToken, share, password) {
+    const files = Array.isArray(share?.files) ? share.files : [];
+    if (!share?.is_encrypted) {
+        return;
+    }
+
+    const previewableFiles = files.filter(isPreviewablePublicShareFile);
+    if (previewableFiles.length === 0) {
+        return;
+    }
+
+    const loadingMap = { ...state.publicShare.previewLoadingMap };
+    for (const file of previewableFiles) {
+        loadingMap[file.id] = true;
+    }
+    state.publicShare.previewLoadingMap = loadingMap;
+    render();
+
+    await Promise.all(previewableFiles.map((file) => prepareEncryptedPublicSharePreview(publicToken, accessToken, file, password)));
+}
+
+async function prepareEncryptedPublicSharePreview(publicToken, accessToken, file, password) {
+    try {
+        const response = await requestRaw(buildPublicShareFilePath(publicToken, file.id, accessToken), {
+            withAuth: false
+        });
+        const encryptedBlob = await response.blob();
+        const encryption = buildFileEncryptionFromHeaders(response.headers);
+        const contentType = response.headers.get("X-Share-File-Content-Type") || file.content_type || "application/octet-stream";
+        const decryptedBytes = await decryptFileWithPassword(encryptedBlob, encryption, password);
+        const previewURL = URL.createObjectURL(new Blob([decryptedBytes], { type: contentType }));
+
+        if (state.publicShare.token !== publicToken || state.publicShare.accessToken !== accessToken || !state.publicShare.contentOpen) {
+            URL.revokeObjectURL(previewURL);
+            return;
+        }
+
+        state.publicShare.filePreviews = {
+            ...state.publicShare.filePreviews,
+            [file.id]: previewURL
+        };
+        const nextErrors = { ...state.publicShare.previewErrorMap };
+        delete nextErrors[file.id];
+        state.publicShare.previewErrorMap = nextErrors;
+    } catch (error) {
+        if (state.publicShare.token === publicToken && state.publicShare.accessToken === accessToken) {
+            state.publicShare.previewErrorMap = {
+                ...state.publicShare.previewErrorMap,
+                [file.id]: toUserMessage(error)
+            };
+        }
+    } finally {
+        if (state.publicShare.token === publicToken && state.publicShare.accessToken === accessToken) {
+            const nextLoadingMap = { ...state.publicShare.previewLoadingMap };
+            delete nextLoadingMap[file.id];
+            state.publicShare.previewLoadingMap = nextLoadingMap;
+            if (state.route === "public-share") {
+                render();
+            }
+        }
+    }
+}
+
+function buildPublicShareFilePath(token, fileID, accessToken, options = {}) {
+    const query = new URLSearchParams({
+        access_token: accessToken
+    });
+    if (options.download) {
+        query.set("download", "1");
+    }
+    return `/v1/public/shares/${encodeURIComponent(token)}/files/${encodeURIComponent(fileID)}?${query.toString()}`;
+}
+
+function buildPublicShareFileURL(token, fileID, accessToken, options = {}) {
+    return `${state.serverBaseUrl}${buildPublicShareFilePath(token, fileID, accessToken, options)}`;
+}
+
+function buildFileEncryptionFromHeaders(headers) {
+    return {
+        version: headers.get("X-Share-Encryption-Version") || "",
+        kdf: headers.get("X-Share-Encryption-KDF") || "",
+        iterations: Number(headers.get("X-Share-Encryption-Iterations") || 0),
+        salt: headers.get("X-Share-Encryption-Salt") || "",
+        nonce: headers.get("X-Share-Encryption-Nonce") || "",
+        cipher: headers.get("X-Share-Encryption-Cipher") || ""
+    };
+}
+
+function resolvePublicShareFileName(file, headers = null) {
+    const headerFileName = headers instanceof Headers
+        ? decodeHeaderValue(headers.get("X-Share-File-Original-Name")) || parseFilenameFromContentDisposition(headers.get("Content-Disposition"))
+        : "";
+    return headerFileName || file?.original_name || "share.bin";
 }
 
 function navigate(route, options = {}) {

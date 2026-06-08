@@ -1,6 +1,7 @@
 package com.xushuangbo.clipbridge.feature.shell
 
 import com.xushuangbo.clipbridge.MainDispatcherRule
+import com.xushuangbo.clipbridge.core.network.AccountProfileResult
 import com.xushuangbo.clipbridge.core.network.AuthApiClient
 import com.xushuangbo.clipbridge.core.network.AuthApiException
 import com.xushuangbo.clipbridge.core.network.AuthResult
@@ -148,6 +149,10 @@ private class FakeSettingsSessionStore(
         deviceName: String,
         currentDeviceId: String,
         tokens: TokenBundle,
+        isAdmin: Boolean,
+        storageQuotaBytes: Long,
+        uploadBandwidthKbps: Int,
+        downloadBandwidthKbps: Int,
     ) {
         storedSession = StoredSession(
             baseUrl = baseUrl,
@@ -156,6 +161,10 @@ private class FakeSettingsSessionStore(
             currentDeviceId = currentDeviceId,
             username = username,
             deviceName = deviceName,
+            isAdmin = isAdmin,
+            storageQuotaBytes = storageQuotaBytes,
+            uploadBandwidthKbps = uploadBandwidthKbps,
+            downloadBandwidthKbps = downloadBandwidthKbps,
         )
     }
 
@@ -210,7 +219,7 @@ private class FakeSettingsAuthApiClient(
     override suspend fun getCurrentAccount(
         session: StoredSession,
         onRefreshing: (() -> Unit)?,
-    ): AuthResult = error("unused")
+    ): AccountProfileResult = error("unused")
 
     override suspend fun listDevices(
         session: StoredSession,

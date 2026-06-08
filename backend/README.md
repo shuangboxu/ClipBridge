@@ -27,6 +27,11 @@
 - 文件下载接口
 - 文件重命名接口
 - 文件删除接口
+- 文本分享创建 / 列表 / 撤销
+- 文件分享创建
+- 公开取件页基础访问
+- 分享过期、阅后即焚、是否允许复制文本
+- 文本 / 文件加密分享
 
 ## 目录说明
 
@@ -178,6 +183,31 @@ DELETE /v1/files/:id
 - 文件体保存到 `FILE_STORAGE_DIR`
 - 服务端会额外记录来源设备 ID、来源设备名快照、SHA256 和 MIME 类型
 
+### 8. 分享接口
+
+```http
+POST /v1/shares/text
+POST /v1/shares/file
+GET  /v1/shares
+POST /v1/shares/:id/revoke
+GET  /v1/public/shares/:token/meta
+POST /v1/public/shares/:token/content
+```
+
+说明：
+
+- 文本分享支持：
+  - 过期时间
+  - 打开一次后失效
+  - 首次打开后倒计时焚毁
+  - 公开页是否允许复制文本
+  - 浏览器侧端到端加密
+- 文件分享走 `multipart/form-data`
+- 文件分享和文件中心复用同一套磁盘存储目录
+- 公开文本分享返回 JSON
+- 公开文件分享直接返回二进制流
+- 加密文件分享仍由浏览器先解密，再触发下载
+
 ## 生成测试 Token
 
 当前仍然保留开发期命令来生成测试 token：
@@ -206,7 +236,7 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:18080/v1/system/profile
 
 ## 当前阶段的限制
 
-- 还没有分享、管理员能力
+- 还没有管理员能力
 - 当前文本同步阶段只支持 `text`，还没有图片与文件内容
 
 这些会在路线图后续步骤继续补上。

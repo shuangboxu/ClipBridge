@@ -69,11 +69,13 @@ internal enum class DetailPage(val title: String) {
     Files("文件"),
     Scan("扫一扫"),
     Share("分享"),
+    ShareRules("分享规则"),
     AccountInfo("账号信息"),
     Security("安全"),
     Device("设备"),
     Requests("申请"),
     GlobalSettings("全局设置"),
+    UserManagement("用户管理"),
     Approvals("审批"),
 }
 
@@ -84,10 +86,16 @@ internal fun ShellScaffold(
     deviceUiState: DeviceUiState,
     historyViewModel: HistoryViewModel,
     filesViewModel: FilesViewModel,
+    sharesViewModel: SharesViewModel,
+    requestsViewModel: RequestsViewModel,
+    adminSettingsViewModel: AdminSettingsViewModel,
+    adminUsersViewModel: AdminUsersViewModel,
+    adminReviewsViewModel: AdminReviewsViewModel,
     onRequireAuth: (String) -> Unit,
     onToggleSync: () -> Unit,
     onServiceAddressChange: (String) -> Unit,
     onSaveServiceAddress: () -> Unit,
+    onRefreshSessionSnapshot: () -> Unit,
     onCurrentPasswordChange: (String) -> Unit,
     onNewPasswordChange: (String) -> Unit,
     onConfirmNewPasswordChange: (String) -> Unit,
@@ -217,6 +225,34 @@ internal fun ShellScaffold(
                                 contentDescription = "刷新文件列表",
                             )
                         }
+                    } else if (currentDetailPage == DetailPage.Requests) {
+                        IconButton(onClick = { requestsViewModel.refresh() }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "刷新申请记录",
+                            )
+                        }
+                    } else if (currentDetailPage == DetailPage.GlobalSettings) {
+                        IconButton(onClick = { adminSettingsViewModel.refresh() }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "刷新管理员设置",
+                            )
+                        }
+                    } else if (currentDetailPage == DetailPage.UserManagement) {
+                        IconButton(onClick = { adminUsersViewModel.refreshUsers() }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "刷新用户列表",
+                            )
+                        }
+                    } else if (currentDetailPage == DetailPage.Approvals) {
+                        IconButton(onClick = { adminReviewsViewModel.refresh() }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "刷新审批队列",
+                            )
+                        }
                     }
                 },
             )
@@ -244,7 +280,15 @@ internal fun ShellScaffold(
                 uploadRequestVersion = filesUploadRequestVersion,
             )
             DetailPage.Scan -> ScanScreen(innerPadding = innerPadding)
-            DetailPage.Share -> ShareScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
+            DetailPage.Share -> ShareScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = sharesViewModel,
+                onOpenShareRules = { openDetailPage(DetailPage.ShareRules) },
+            )
+            DetailPage.ShareRules -> ShareRulesScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = sharesViewModel,
+            )
             DetailPage.AccountInfo -> AccountInfoScreen(
                 innerPadding = innerPadding,
                 uiState = settingsUiState,
@@ -272,9 +316,22 @@ internal fun ShellScaffold(
                 onSaveDeviceName = onSaveDeviceName,
                 onForceOfflineDevice = onForceOfflineDevice,
             )
-            DetailPage.Requests -> RequestScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
-            DetailPage.GlobalSettings -> GlobalSettingsScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
-            DetailPage.Approvals -> ApprovalsScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
+            DetailPage.Requests -> RequestsScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = requestsViewModel,
+            )
+            DetailPage.GlobalSettings -> AdminSettingsScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = adminSettingsViewModel,
+            )
+            DetailPage.UserManagement -> UserManagementScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = adminUsersViewModel,
+            )
+            DetailPage.Approvals -> ApprovalsScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = adminReviewsViewModel,
+            )
             null -> when (currentTab) {
                 MainTab.Home -> HomeScreen(
                     syncEnabled = settingsUiState.syncEnabled,
@@ -297,7 +354,9 @@ internal fun ShellScaffold(
                 MainTab.Ai -> AiScreen(innerPadding = innerPadding, onPendingFeatureClick = onPendingFeatureClick)
                 MainTab.Settings -> SettingsScreen(
                     innerPadding = innerPadding,
+                    uiState = settingsUiState,
                     onOpenDetailPage = openDetailPage,
+                    onRefreshSessionSnapshot = onRefreshSessionSnapshot,
                     onLogout = onLogout,
                 )
             }

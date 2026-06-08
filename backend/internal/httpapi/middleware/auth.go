@@ -38,6 +38,7 @@ func Auth(authService *auth.Service) Middleware {
 			identity := authcontext.Identity{
 				UserID:   user.ID,
 				DeviceID: device.ID,
+				IsAdmin:  user.IsAdmin,
 			}
 			r = r.WithContext(authcontext.WithIdentity(r.Context(), identity))
 

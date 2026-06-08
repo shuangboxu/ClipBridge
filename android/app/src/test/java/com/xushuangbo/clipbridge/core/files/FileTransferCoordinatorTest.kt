@@ -130,6 +130,10 @@ class FileTransferCoordinatorTest {
             deviceName: String,
             currentDeviceId: String,
             tokens: TokenBundle,
+            isAdmin: Boolean,
+            storageQuotaBytes: Long,
+            uploadBandwidthKbps: Int,
+            downloadBandwidthKbps: Int,
         ) {
             session = session.copy(
                 baseUrl = baseUrl,
@@ -138,6 +142,10 @@ class FileTransferCoordinatorTest {
                 currentDeviceId = currentDeviceId,
                 accessToken = tokens.accessToken,
                 refreshToken = tokens.refreshToken,
+                isAdmin = isAdmin,
+                storageQuotaBytes = storageQuotaBytes,
+                uploadBandwidthKbps = uploadBandwidthKbps,
+                downloadBandwidthKbps = downloadBandwidthKbps,
             )
         }
 

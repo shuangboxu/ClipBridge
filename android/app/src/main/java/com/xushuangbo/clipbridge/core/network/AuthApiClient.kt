@@ -19,12 +19,54 @@ data class TokenBundle(
     val refreshToken: String,
 )
 
+data class SystemLimitsRecord(
+    val maxUserCount: Int,
+    val defaultStorageQuotaBytes: Long,
+    val defaultUploadBandwidthKbps: Int,
+    val defaultDownloadBandwidthKbps: Int,
+    val maxUserUploadBandwidthKbps: Int,
+    val maxUserDownloadBandwidthKbps: Int,
+    val maxUploadFileBytes: Long,
+    val allowRegistration: Boolean,
+)
+
 data class AuthResult(
     val userId: String,
     val username: String,
     val currentDeviceId: String,
     val deviceName: String = "",
     val platform: String = "android",
+    val isAdmin: Boolean = false,
+    val storageQuotaBytes: Long = 0L,
+    val uploadBandwidthKbps: Int = 0,
+    val downloadBandwidthKbps: Int = 0,
+    val createdAt: String = "",
+    val updatedAt: String = "",
+    val tokens: TokenBundle? = null,
+)
+
+data class AccountProfileResult(
+    val userId: String,
+    val username: String,
+    val currentDeviceId: String,
+    val isAdmin: Boolean = false,
+    val storageQuotaBytes: Long = 0L,
+    val uploadBandwidthKbps: Int = 0,
+    val downloadBandwidthKbps: Int = 0,
+    val createdAt: String = "",
+    val updatedAt: String = "",
+    val storageUsedBytes: Long = 0L,
+    val storageFreeBytes: Long = 0L,
+    val limits: SystemLimitsRecord = SystemLimitsRecord(
+        maxUserCount = 0,
+        defaultStorageQuotaBytes = 0L,
+        defaultUploadBandwidthKbps = 0,
+        defaultDownloadBandwidthKbps = 0,
+        maxUserUploadBandwidthKbps = 0,
+        maxUserDownloadBandwidthKbps = 0,
+        maxUploadFileBytes = 0L,
+        allowRegistration = false,
+    ),
     val tokens: TokenBundle? = null,
 )
 
@@ -81,7 +123,7 @@ interface AuthApiClient {
     suspend fun getCurrentAccount(
         session: StoredSession,
         onRefreshing: (() -> Unit)? = null,
-    ): AuthResult
+    ): AccountProfileResult
 
     suspend fun listDevices(
         session: StoredSession,
@@ -195,7 +237,7 @@ class HttpAuthApiClient(
     override suspend fun getCurrentAccount(
         session: StoredSession,
         onRefreshing: (() -> Unit)?,
-    ): AuthResult = withContext(Dispatchers.IO) {
+    ): AccountProfileResult = withContext(Dispatchers.IO) {
         val response = requestAuthenticatedData(
             session = session,
             method = "GET",
@@ -329,6 +371,12 @@ class HttpAuthApiClient(
             currentDeviceId = deviceData.optString("id"),
             deviceName = deviceData.optString("device_name"),
             platform = deviceData.optString("platform", "android"),
+            isAdmin = userData.optBoolean("is_admin", false),
+            storageQuotaBytes = userData.optLong("storage_quota_bytes", 0L),
+            uploadBandwidthKbps = userData.optInt("upload_bandwidth_kbps", 0),
+            downloadBandwidthKbps = userData.optInt("download_bandwidth_kbps", 0),
+            createdAt = userData.optString("created_at"),
+            updatedAt = userData.optString("updated_at"),
             tokens = parseTokenBundle(tokensData),
         )
     }
@@ -336,14 +384,36 @@ class HttpAuthApiClient(
     private fun parseCurrentAccount(
         responseData: JSONObject,
         refreshedTokens: TokenBundle?,
-    ): AuthResult {
+    ): AccountProfileResult {
         val userData = responseData.getJSONObject("user")
-        return AuthResult(
+        return AccountProfileResult(
             userId = userData.optString("id"),
             username = userData.optString("username"),
             currentDeviceId = responseData.optString("current_device_id"),
-            deviceName = responseData.optString("device_name"),
+            isAdmin = userData.optBoolean("is_admin", false),
+            storageQuotaBytes = userData.optLong("storage_quota_bytes", 0L),
+            uploadBandwidthKbps = userData.optInt("upload_bandwidth_kbps", 0),
+            downloadBandwidthKbps = userData.optInt("download_bandwidth_kbps", 0),
+            createdAt = userData.optString("created_at"),
+            updatedAt = userData.optString("updated_at"),
+            storageUsedBytes = responseData.optLong("storage_used_bytes", 0L),
+            storageFreeBytes = responseData.optLong("storage_free_bytes", 0L),
+            limits = parseSystemLimits(responseData.optJSONObject("limits")),
             tokens = refreshedTokens,
+        )
+    }
+
+    private fun parseSystemLimits(limitsData: JSONObject?): SystemLimitsRecord {
+        val safeLimits = limitsData ?: JSONObject()
+        return SystemLimitsRecord(
+            maxUserCount = safeLimits.optInt("max_user_count", 0),
+            defaultStorageQuotaBytes = safeLimits.optLong("default_storage_quota_bytes", 0L),
+            defaultUploadBandwidthKbps = safeLimits.optInt("default_upload_bandwidth_kbps", 0),
+            defaultDownloadBandwidthKbps = safeLimits.optInt("default_download_bandwidth_kbps", 0),
+            maxUserUploadBandwidthKbps = safeLimits.optInt("max_user_upload_bandwidth_kbps", 0),
+            maxUserDownloadBandwidthKbps = safeLimits.optInt("max_user_download_bandwidth_kbps", 0),
+            maxUploadFileBytes = safeLimits.optLong("max_upload_file_bytes", 0L),
+            allowRegistration = safeLimits.optBoolean("allow_registration", false),
         )
     }
 

@@ -165,6 +165,10 @@ class AuthViewModel(
                     deviceName = deviceNameForSubmit,
                     currentDeviceId = result.currentDeviceId,
                     tokens = tokens,
+                    isAdmin = result.isAdmin,
+                    storageQuotaBytes = result.storageQuotaBytes,
+                    uploadBandwidthKbps = result.uploadBandwidthKbps,
+                    downloadBandwidthKbps = result.downloadBandwidthKbps,
                 )
 
                 _uiState.update {

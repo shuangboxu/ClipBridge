@@ -14,7 +14,12 @@ export const state = {
     profile: null,
     devices: [],
     files: createInitialFilesState(),
+    shareRules: loadShareRules(),
+    shares: createInitialSharesState(),
+    requests: createInitialRequestsState(),
+    admin: createInitialAdminState(),
     clipboard: createInitialClipboardState(),
+    publicShare: createInitialPublicShareState(),
     clipboardPanel: {
         mode: "",
         itemId: ""
@@ -38,8 +43,12 @@ export function setSession(session) {
     state.profile = null;
     state.files = createInitialFilesState();
     closeFilePanel();
+    state.shares = createInitialSharesState();
+    state.requests = createInitialRequestsState();
+    state.admin = createInitialAdminState();
     state.clipboard = createInitialClipboardState();
     closeClipboardPanel();
+    state.publicShare = createInitialPublicShareState();
     closeSettingsModal();
     localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
 }
@@ -90,8 +99,12 @@ export function clearSession() {
     state.session = null;
     state.files = createInitialFilesState();
     closeFilePanel();
+    state.shares = createInitialSharesState();
+    state.requests = createInitialRequestsState();
+    state.admin = createInitialAdminState();
     state.clipboard = createInitialClipboardState();
     closeClipboardPanel();
+    state.publicShare = createInitialPublicShareState();
     closeSettingsModal();
     localStorage.removeItem(STORAGE_KEYS.session);
 }
@@ -143,6 +156,73 @@ export function openFilePanel(mode, file) {
     };
 }
 
+export function openSharePanel() {
+    state.shares = {
+        ...state.shares,
+        panelOpen: true
+    };
+}
+
+export function closeSharePanel() {
+    state.shares = {
+        ...state.shares,
+        panelOpen: false,
+        dragActive: false
+    };
+}
+
+export function selectShareStrategy(strategyKey) {
+    state.shares = {
+        ...state.shares,
+        strategyKey
+    };
+}
+
+export function updateShareRules(ruleKey, fields) {
+    if (!ruleKey || !state.shareRules?.[ruleKey]) {
+        return;
+    }
+
+    state.shareRules = {
+        ...state.shareRules,
+        [ruleKey]: {
+            ...state.shareRules[ruleKey],
+            ...fields
+        }
+    };
+    localStorage.setItem(STORAGE_KEYS.shareRules, JSON.stringify(state.shareRules));
+}
+
+export function toggleShareRulePanel(ruleKey) {
+    if (!ruleKey) {
+        return;
+    }
+
+    const currentPanels = state.settingsModal.shareRulePanels || createDefaultShareRulePanels();
+    state.settingsModal = {
+        ...state.settingsModal,
+        shareRulePanels: {
+            ...currentPanels,
+            [ruleKey]: !currentPanels[ruleKey]
+        }
+    };
+}
+
+export function setAdminPanelOpen(panelKey, isOpen) {
+    if (!panelKey || !Object.prototype.hasOwnProperty.call(state.admin.panels || {}, panelKey)) {
+        return;
+    }
+
+    // 管理页会频繁整页重绘，这里单独记住折叠状态，避免用户展开后又被自动收起。
+    state.admin = {
+        ...state.admin,
+        panels: {
+            ...state.admin.panels,
+            [panelKey]: Boolean(isOpen)
+        }
+    };
+}
+
 export function closeClipboardPanel() {
     state.clipboardPanel = {
         mode: "",
@@ -190,7 +270,8 @@ export function closeSettingsModal() {
     state.settingsModal = {
         ...state.settingsModal,
         isOpen: false,
-        passwordForm: createEmptyPasswordForm()
+        passwordForm: createEmptyPasswordForm(),
+        shareRulePanels: createDefaultShareRulePanels()
     };
 }
 
@@ -244,6 +325,92 @@ function createInitialFilesState() {
     };
 }
 
+function createInitialSharesState() {
+    return {
+        textDraft: "",
+        selectedFiles: [],
+        dragActive: false,
+        panelOpen: false,
+        strategyKey: "expire",
+        password: "",
+        items: [],
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+        status: "all",
+        maxUploadBytes: 0,
+        latestShareToken: ""
+    };
+}
+
+function createInitialRequestsState() {
+    return {
+        quotaForm: {
+            requestedQuotaMB: "",
+            reason: ""
+        },
+        bandwidthForm: {
+            requestedUploadKbps: "",
+            requestedDownloadKbps: "",
+            reason: ""
+        },
+        adminForm: {
+            reason: ""
+        },
+        quotaRequests: [],
+        bandwidthRequests: [],
+        adminRequests: []
+    };
+}
+
+function createInitialAdminState() {
+    return {
+        settings: null,
+        currentUserCount: 0,
+        panels: createDefaultAdminPanels(),
+        settingsForm: {
+            maxUserCount: "",
+            defaultStorageQuotaMB: "",
+            defaultUploadBandwidthKbps: "",
+            defaultDownloadBandwidthKbps: "",
+            maxUserUploadBandwidthKbps: "",
+            maxUserDownloadBandwidthKbps: "",
+            maxUploadFileMB: "",
+            allowRegistration: false
+        },
+        users: [],
+        userDrafts: {},
+        quotaRequests: [],
+        bandwidthRequests: [],
+        adminRequests: []
+    };
+}
+
+function createDefaultAdminPanels() {
+    return {
+        settings: false,
+        users: false,
+        reviews: false
+    };
+}
+
+function createInitialPublicShareState() {
+    return {
+        token: "",
+        meta: null,
+        password: "",
+        accessToken: "",
+        accessTokenExpiresAt: "",
+        textContent: "",
+        contentOpen: false,
+        filePreviews: {},
+        previewLoadingMap: {},
+        previewErrorMap: {},
+        countdownDisplayDeadlineAt: 0
+    };
+}
+
 function createInitialFilePanelState() {
     return {
         mode: "",
@@ -256,7 +423,8 @@ function createInitialSettingsModalState() {
     return {
         isOpen: false,
         activeCategory: "general",
-        passwordForm: createEmptyPasswordForm()
+        passwordForm: createEmptyPasswordForm(),
+        shareRulePanels: createDefaultShareRulePanels()
     };
 }
 
@@ -265,5 +433,66 @@ function createEmptyPasswordForm() {
         currentPassword: "",
         newPassword: "",
         confirmPassword: ""
+    };
+}
+
+function createDefaultShareRulePanels() {
+    return {
+        never: false,
+        expire: false,
+        once: false
+    };
+}
+
+function loadShareRules() {
+    const fallback = createDefaultShareRules();
+    const rawValue = localStorage.getItem(STORAGE_KEYS.shareRules);
+    if (!rawValue) {
+        return fallback;
+    }
+
+    try {
+        const parsed = JSON.parse(rawValue);
+        return {
+            never: {
+                ...fallback.never,
+                ...(parsed?.never || {})
+            },
+            expire: {
+                ...fallback.expire,
+                ...(parsed?.expire || {})
+            },
+            once: {
+                ...fallback.once,
+                ...(parsed?.once || {})
+            }
+        };
+    } catch (error) {
+        console.warn("parse share rules failed", error);
+        localStorage.removeItem(STORAGE_KEYS.shareRules);
+        return fallback;
+    }
+}
+
+function createDefaultShareRules() {
+    return {
+        never: {
+            key: "never",
+            title: "不过期",
+            allowCopyText: false
+        },
+        expire: {
+            key: "expire",
+            title: "过期",
+            expireHours: 24,
+            allowCopyText: false
+        },
+        once: {
+            key: "once",
+            title: "打开一次失效",
+            showCountdown: true,
+            countdownSeconds: 10,
+            allowCopyText: false
+        }
     };
 }

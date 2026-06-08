@@ -4,16 +4,79 @@ import { createDefaultDeviceName, isMobileViewport } from "../utils/browser.js";
 import { escapeAttribute, escapeHTML } from "../utils/format.js";
 import { renderErrorMessage, renderLoadingState, renderToast } from "./common.js";
 import { renderIcon } from "./icons.js";
-import { renderCurrentPage, renderSettingsModal } from "./pages.js";
+import { renderCurrentPage, renderPublicSharePage, renderSettingsModal } from "./pages.js";
+
+let lastRenderedRoute = "";
 
 export function renderApp(appRoot) {
     if (!appRoot) {
         return;
     }
 
-    appRoot.innerHTML = state.session && PROTECTED_ROUTES.has(state.route)
+    // 整个应用目前还是全量 innerHTML 重绘。
+    // 这里把常见滚动容器的位置先记住，再在同一路由的下一次重绘后恢复，
+    // 避免点击复制、筛选之类的小动作时页面突然跳回顶部。
+    const shouldRestoreScroll = lastRenderedRoute === state.route;
+    const scrollSnapshot = shouldRestoreScroll ? captureScrollSnapshot(appRoot) : null;
+
+    appRoot.innerHTML = state.route === "public-share"
+        ? renderPublicShareLayout()
+        : state.session && PROTECTED_ROUTES.has(state.route)
         ? renderProtectedLayout()
         : renderAuthLayout();
+
+    if (shouldRestoreScroll && scrollSnapshot) {
+        restoreScrollSnapshot(appRoot, scrollSnapshot);
+    }
+
+    lastRenderedRoute = state.route;
+}
+
+function captureScrollSnapshot(appRoot) {
+    return {
+        windowX: window.scrollX,
+        windowY: window.scrollY,
+        content: readElementScroll(appRoot, ".content-scroll"),
+        settingsNav: readElementScroll(appRoot, ".settings-modal-nav"),
+        settingsContent: readElementScroll(appRoot, ".settings-modal-content"),
+        devicePanel: readElementScroll(appRoot, ".device-panel")
+    };
+}
+
+function restoreScrollSnapshot(appRoot, snapshot) {
+    window.requestAnimationFrame(() => {
+        writeElementScroll(appRoot, ".content-scroll", snapshot.content);
+        writeElementScroll(appRoot, ".settings-modal-nav", snapshot.settingsNav);
+        writeElementScroll(appRoot, ".settings-modal-content", snapshot.settingsContent);
+        writeElementScroll(appRoot, ".device-panel", snapshot.devicePanel);
+        window.scrollTo(snapshot.windowX || 0, snapshot.windowY || 0);
+    });
+}
+
+function readElementScroll(appRoot, selector) {
+    const element = appRoot.querySelector(selector);
+    if (!(element instanceof HTMLElement)) {
+        return null;
+    }
+
+    return {
+        top: element.scrollTop,
+        left: element.scrollLeft
+    };
+}
+
+function writeElementScroll(appRoot, selector, value) {
+    if (!value) {
+        return;
+    }
+
+    const element = appRoot.querySelector(selector);
+    if (!(element instanceof HTMLElement)) {
+        return;
+    }
+
+    element.scrollTop = value.top || 0;
+    element.scrollLeft = value.left || 0;
 }
 
 function renderAuthLayout() {
@@ -67,6 +130,7 @@ function renderAuthLayout() {
 
 function renderProtectedLayout() {
     const routeMeta = getRouteMeta(state.route);
+    const visibleNavItems = getVisibleNavItems();
     const topbarTitle = String(routeMeta.title || "").trim();
     const shellClassParts = ["page-shell", "app-frame"];
     const sidebarToggleLabel = getSidebarToggleLabel();
@@ -104,7 +168,7 @@ function renderProtectedLayout() {
                 </div>
 
                 <nav class="sidebar-nav" aria-label="主导航">
-                    ${NAV_ITEMS.map((item) => renderNavButton(item)).join("")}
+                    ${visibleNavItems.map((item) => renderNavButton(item)).join("")}
                 </nav>
 
                 <div class="sidebar-footer">
@@ -141,6 +205,7 @@ function renderProtectedLayout() {
 
                         <div class="topbar-meta">
                             <span class="meta-chip"><strong>用户</strong> ${escapeHTML(state.profile?.user?.username || state.session?.user?.username || "-")}</span>
+                            <span class="meta-chip"><strong>角色</strong> ${resolveUserRoleLabel()}</span>
                         </div>
                     </div>
                 </header>
@@ -155,6 +220,29 @@ function renderProtectedLayout() {
 
             ${renderSettingsModal()}
         </div>
+    `;
+}
+
+function getVisibleNavItems() {
+    const isAdmin = Boolean(state.profile?.user?.is_admin || state.session?.user?.is_admin);
+    return NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+}
+
+function resolveUserRoleLabel() {
+    return Boolean(state.profile?.user?.is_admin || state.session?.user?.is_admin)
+        ? "管理员"
+        : "普通用户";
+}
+
+function renderPublicShareLayout() {
+    return `
+        <main class="page-shell public-share-shell-page">
+            ${renderToast(state.pageMessage)}
+            <div class="page-grid">
+                ${renderErrorMessage(state.pageError)}
+                ${state.isBootstrapping ? renderLoadingState() : renderPublicSharePage()}
+            </div>
+        </main>
     `;
 }
 

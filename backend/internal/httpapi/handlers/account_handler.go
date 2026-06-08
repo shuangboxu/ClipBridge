@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 
+	"clipbridge/backend/internal/admin"
 	"clipbridge/backend/internal/app"
 	"clipbridge/backend/internal/auth"
 	"clipbridge/backend/internal/httpapi/authcontext"
@@ -12,7 +14,12 @@ import (
 )
 
 type AccountHandler struct {
-	authService *auth.Service
+	authService  *auth.Service
+	adminService accountAdminService
+}
+
+type accountAdminService interface {
+	GetAccountOverview(ctx context.Context, userID string) (admin.AccountOverview, error)
 }
 
 type changePasswordRequest struct {
@@ -24,9 +31,13 @@ func NewAccountHandler(application *app.App) *AccountHandler {
 	if application == nil {
 		return &AccountHandler{}
 	}
-	return &AccountHandler{
+	handler := &AccountHandler{
 		authService: application.AuthService,
 	}
+	if application.AdminService != nil {
+		handler.adminService = application.AdminService
+	}
+	return handler
 }
 
 func (h *AccountHandler) GetMe(w http.ResponseWriter, r *http.Request) {
@@ -46,9 +57,27 @@ func (h *AccountHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.adminService == nil {
+		response.Error(w, r, http.StatusInternalServerError, "admin service is not ready")
+		return
+	}
+
+	overview, err := h.adminService.GetAccountOverview(r.Context(), identity.UserID)
+	if err != nil {
+		if errors.Is(err, admin.ErrNotFound) {
+			response.Error(w, r, http.StatusNotFound, "user not found")
+			return
+		}
+		response.Error(w, r, http.StatusInternalServerError, "load current account failed")
+		return
+	}
+
 	response.OK(w, r, map[string]any{
-		"user":              buildUserData(profile.User),
-		"current_device_id": profile.CurrentDeviceID,
+		"user":               buildUserData(profile.User),
+		"current_device_id":  profile.CurrentDeviceID,
+		"storage_used_bytes": overview.StorageUsedBytes,
+		"storage_free_bytes": overview.StorageFreeBytes,
+		"limits":             overview.Limits,
 	})
 }
 

@@ -16,6 +16,11 @@ fun MainShellRoute(
     deviceViewModel: DeviceViewModel = viewModel(),
     historyViewModel: HistoryViewModel = viewModel(),
     filesViewModel: FilesViewModel = viewModel(),
+    sharesViewModel: SharesViewModel = viewModel(),
+    requestsViewModel: RequestsViewModel = viewModel(),
+    adminSettingsViewModel: AdminSettingsViewModel = viewModel(),
+    adminUsersViewModel: AdminUsersViewModel = viewModel(),
+    adminReviewsViewModel: AdminReviewsViewModel = viewModel(),
     onRequireAuth: (String) -> Unit,
 ) {
     val settingsUiState by settingsViewModel.uiState.collectAsStateWithLifecycle()
@@ -57,6 +62,61 @@ fun MainShellRoute(
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
+    LaunchedEffect(sharesViewModel) {
+        sharesViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
+            onRequireAuth(message)
+        }
+    }
+    LaunchedEffect(sharesViewModel, context) {
+        sharesViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(requestsViewModel) {
+        requestsViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
+            onRequireAuth(message)
+        }
+    }
+    LaunchedEffect(requestsViewModel, context) {
+        requestsViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(adminSettingsViewModel) {
+        adminSettingsViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
+            onRequireAuth(message)
+        }
+    }
+    LaunchedEffect(adminSettingsViewModel, context) {
+        adminSettingsViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(adminUsersViewModel) {
+        adminUsersViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
+            onRequireAuth(message)
+        }
+    }
+    LaunchedEffect(adminUsersViewModel, context) {
+        adminUsersViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(adminReviewsViewModel) {
+        adminReviewsViewModel.sessionExitEvents.collect { message ->
+            SyncServiceController.stopAll(appContext)
+            onRequireAuth(message)
+        }
+    }
+    LaunchedEffect(adminReviewsViewModel, context) {
+        adminReviewsViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     SyncRuntimeEffect(
         syncEnabled = settingsUiState.syncEnabled,
@@ -68,10 +128,16 @@ fun MainShellRoute(
         deviceUiState = deviceUiState,
         historyViewModel = historyViewModel,
         filesViewModel = filesViewModel,
+        sharesViewModel = sharesViewModel,
+        requestsViewModel = requestsViewModel,
+        adminSettingsViewModel = adminSettingsViewModel,
+        adminUsersViewModel = adminUsersViewModel,
+        adminReviewsViewModel = adminReviewsViewModel,
         onRequireAuth = onRequireAuth,
         onToggleSync = settingsViewModel::toggleSyncEnabled,
         onServiceAddressChange = settingsViewModel::updateServiceAddress,
         onSaveServiceAddress = settingsViewModel::saveServiceAddress,
+        onRefreshSessionSnapshot = settingsViewModel::reloadSessionSnapshot,
         onCurrentPasswordChange = settingsViewModel::updateCurrentPassword,
         onNewPasswordChange = settingsViewModel::updateNewPassword,
         onConfirmNewPasswordChange = settingsViewModel::updateConfirmNewPassword,
@@ -94,10 +160,16 @@ fun MainShell(
     deviceUiState: DeviceUiState,
     historyViewModel: HistoryViewModel,
     filesViewModel: FilesViewModel,
+    sharesViewModel: SharesViewModel,
+    requestsViewModel: RequestsViewModel,
+    adminSettingsViewModel: AdminSettingsViewModel,
+    adminUsersViewModel: AdminUsersViewModel,
+    adminReviewsViewModel: AdminReviewsViewModel,
     onRequireAuth: (String) -> Unit,
     onToggleSync: () -> Unit,
     onServiceAddressChange: (String) -> Unit,
     onSaveServiceAddress: () -> Unit,
+    onRefreshSessionSnapshot: () -> Unit,
     onCurrentPasswordChange: (String) -> Unit,
     onNewPasswordChange: (String) -> Unit,
     onConfirmNewPasswordChange: (String) -> Unit,
@@ -117,10 +189,16 @@ fun MainShell(
         deviceUiState = deviceUiState,
         historyViewModel = historyViewModel,
         filesViewModel = filesViewModel,
+        sharesViewModel = sharesViewModel,
+        requestsViewModel = requestsViewModel,
+        adminSettingsViewModel = adminSettingsViewModel,
+        adminUsersViewModel = adminUsersViewModel,
+        adminReviewsViewModel = adminReviewsViewModel,
         onRequireAuth = onRequireAuth,
         onToggleSync = onToggleSync,
         onServiceAddressChange = onServiceAddressChange,
         onSaveServiceAddress = onSaveServiceAddress,
+        onRefreshSessionSnapshot = onRefreshSessionSnapshot,
         onCurrentPasswordChange = onCurrentPasswordChange,
         onNewPasswordChange = onNewPasswordChange,
         onConfirmNewPasswordChange = onConfirmNewPasswordChange,

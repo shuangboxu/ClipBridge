@@ -25,6 +25,11 @@ type Storage interface {
 	Delete(storedPath string) error
 }
 
+type PolicyProvider interface {
+	PrepareUploadReader(ctx context.Context, userID string, src io.Reader) (io.Reader, int64, error)
+	CurrentMaxUploadBytes(ctx context.Context, userID string) (int64, error)
+}
+
 type FileBody interface {
 	io.ReadCloser
 }
@@ -32,14 +37,14 @@ type FileBody interface {
 type Service struct {
 	repo           Repository
 	store          Storage
-	maxUploadBytes int64
+	policyProvider PolicyProvider
 }
 
-func NewService(repo Repository, store Storage, maxUploadBytes int64) *Service {
+func NewService(repo Repository, store Storage, policyProvider PolicyProvider) *Service {
 	return &Service{
 		repo:           repo,
 		store:          store,
-		maxUploadBytes: maxUploadBytes,
+		policyProvider: policyProvider,
 	}
 }
 
@@ -61,12 +66,23 @@ func (s *Service) Upload(ctx context.Context, userID, deviceID, originalName, co
 		return Item{}, err
 	}
 
+	uploadReader := src
+	maxUploadBytes := int64(0)
+	if s.policyProvider != nil {
+		preparedReader, preparedMaxBytes, err := s.policyProvider.PrepareUploadReader(ctx, userID, src)
+		if err != nil {
+			return Item{}, err
+		}
+		uploadReader = preparedReader
+		maxUploadBytes = preparedMaxBytes
+	}
+
 	originDeviceName, err := s.repo.GetDeviceSnapshot(ctx, userID, deviceID)
 	if err != nil {
 		return Item{}, err
 	}
 
-	saved, err := s.store.Save(ctx, userID, normalizedName, src, s.maxUploadBytes)
+	saved, err := s.store.Save(ctx, userID, normalizedName, uploadReader, maxUploadBytes)
 	if err != nil {
 		switch {
 		case errors.Is(err, filestore.ErrFileTooLarge):
@@ -119,6 +135,14 @@ func (s *Service) List(ctx context.Context, userID, deviceID string, page, pageS
 		return ListResult{}, err
 	}
 
+	maxUploadBytes := int64(0)
+	if s.policyProvider != nil {
+		maxUploadBytes, err = s.policyProvider.CurrentMaxUploadBytes(ctx, userID)
+		if err != nil {
+			return ListResult{}, err
+		}
+	}
+
 	totalPages := 0
 	if totalFiles > 0 {
 		totalPages = (totalFiles + options.PageSize - 1) / options.PageSize
@@ -134,7 +158,7 @@ func (s *Service) List(ctx context.Context, userID, deviceID string, page, pageS
 		Summary: Summary{
 			TotalFiles:     totalFiles,
 			TotalBytes:     totalBytes,
-			MaxUploadBytes: s.maxUploadBytes,
+			MaxUploadBytes: maxUploadBytes,
 		},
 	}, nil
 }
@@ -221,10 +245,10 @@ func (s *Service) Delete(ctx context.Context, userID, deviceID, fileID string) (
 }
 
 func (s *Service) MaxUploadBytes() int64 {
-	if s == nil {
+	if s == nil || s.policyProvider == nil {
 		return 0
 	}
-	return s.maxUploadBytes
+	return 0
 }
 
 func normalizePage(page int) int {

@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
     session: "clipbridge.web.session",
-    sidebarCollapsed: "clipbridge.web.sidebar-collapsed"
+    sidebarCollapsed: "clipbridge.web.sidebar-collapsed",
+    shareRules: "clipbridge.web.share-rules"
 };
 
 export const DEFAULT_ROUTE = "dashboard";
@@ -11,9 +12,9 @@ export const NAV_ITEMS = [
     { route: "history", title: "历史", icon: "history", ready: true },
     { route: "devices", title: "设备", icon: "devices", ready: true },
     { route: "files", title: "文件", icon: "files", ready: true },
-    { route: "shares", title: "分享", icon: "shares", ready: false },
-    { route: "requests", title: "申请", icon: "requests", ready: false },
-    { route: "admin", title: "管理", icon: "admin", ready: false },
+    { route: "shares", title: "分享", icon: "shares", ready: true },
+    { route: "requests", title: "申请", icon: "requests", ready: true },
+    { route: "admin", title: "管理", icon: "admin", ready: true, adminOnly: true },
     { route: "ai", title: "AI", icon: "ai", ready: false }
 ];
 

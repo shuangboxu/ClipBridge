@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"clipbridge/backend/internal/admin"
 	"clipbridge/backend/internal/id"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -28,13 +29,40 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, username, passwordH
 
 	var user User
 	err = r.db.QueryRow(ctx, `
-		INSERT INTO users(id, username, password_hash)
-		VALUES ($1, $2, $3)
-		RETURNING id, username, password_hash, created_at, updated_at
-	`, userID, username, passwordHash).Scan(
+		INSERT INTO users(
+			id,
+			username,
+			password_hash,
+			storage_quota_bytes,
+			upload_bandwidth_kbps,
+			download_bandwidth_kbps
+		)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			COALESCE((SELECT default_storage_quota_bytes FROM system_settings WHERE id = true), $4),
+			COALESCE((SELECT default_upload_bandwidth_kbps FROM system_settings WHERE id = true), $5),
+			COALESCE((SELECT default_download_bandwidth_kbps FROM system_settings WHERE id = true), $6)
+		)
+		RETURNING
+			id,
+			username,
+			password_hash,
+			is_admin,
+			storage_quota_bytes,
+			upload_bandwidth_kbps,
+			download_bandwidth_kbps,
+			created_at,
+			updated_at
+	`, userID, username, passwordHash, admin.DefaultStorageQuotaBytes, admin.DefaultUploadBandwidthKbps, admin.DefaultDownloadBandwidthKbps).Scan(
 		&user.ID,
 		&user.Username,
 		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.StorageQuotaBytes,
+		&user.UploadBandwidthKbps,
+		&user.DownloadBandwidthKbps,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -50,13 +78,26 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, username, passwordH
 func (r *PostgresRepository) GetUserByUsername(ctx context.Context, username string) (User, error) {
 	var user User
 	err := r.db.QueryRow(ctx, `
-		SELECT id, username, password_hash, created_at, updated_at
+		SELECT
+			id,
+			username,
+			password_hash,
+			is_admin,
+			storage_quota_bytes,
+			upload_bandwidth_kbps,
+			download_bandwidth_kbps,
+			created_at,
+			updated_at
 		FROM users
 		WHERE username = $1
 	`, username).Scan(
 		&user.ID,
 		&user.Username,
 		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.StorageQuotaBytes,
+		&user.UploadBandwidthKbps,
+		&user.DownloadBandwidthKbps,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -72,13 +113,26 @@ func (r *PostgresRepository) GetUserByUsername(ctx context.Context, username str
 func (r *PostgresRepository) GetUserByID(ctx context.Context, userID string) (User, error) {
 	var user User
 	err := r.db.QueryRow(ctx, `
-		SELECT id, username, password_hash, created_at, updated_at
+		SELECT
+			id,
+			username,
+			password_hash,
+			is_admin,
+			storage_quota_bytes,
+			upload_bandwidth_kbps,
+			download_bandwidth_kbps,
+			created_at,
+			updated_at
 		FROM users
 		WHERE id = $1
 	`, userID).Scan(
 		&user.ID,
 		&user.Username,
 		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.StorageQuotaBytes,
+		&user.UploadBandwidthKbps,
+		&user.DownloadBandwidthKbps,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -97,11 +151,24 @@ func (r *PostgresRepository) UpdateUserPassword(ctx context.Context, userID, pas
 		UPDATE users
 		SET password_hash = $2, updated_at = now()
 		WHERE id = $1
-		RETURNING id, username, password_hash, created_at, updated_at
+		RETURNING
+			id,
+			username,
+			password_hash,
+			is_admin,
+			storage_quota_bytes,
+			upload_bandwidth_kbps,
+			download_bandwidth_kbps,
+			created_at,
+			updated_at
 	`, userID, passwordHash).Scan(
 		&user.ID,
 		&user.Username,
 		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.StorageQuotaBytes,
+		&user.UploadBandwidthKbps,
+		&user.DownloadBandwidthKbps,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -145,7 +212,7 @@ func (r *PostgresRepository) GetActiveUserDevice(ctx context.Context, userID, de
 	var device Device
 	err := r.db.QueryRow(ctx, `
 		SELECT
-			u.id, u.username, u.password_hash, u.created_at, u.updated_at,
+			u.id, u.username, u.password_hash, u.is_admin, u.storage_quota_bytes, u.upload_bandwidth_kbps, u.download_bandwidth_kbps, u.created_at, u.updated_at,
 			d.id, d.user_id, d.platform, d.device_name, d.last_seen_at, d.is_active, d.created_at
 		FROM users u
 		INNER JOIN devices d ON d.user_id = u.id
@@ -154,6 +221,10 @@ func (r *PostgresRepository) GetActiveUserDevice(ctx context.Context, userID, de
 		&user.ID,
 		&user.Username,
 		&user.PasswordHash,
+		&user.IsAdmin,
+		&user.StorageQuotaBytes,
+		&user.UploadBandwidthKbps,
+		&user.DownloadBandwidthKbps,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 		&device.ID,

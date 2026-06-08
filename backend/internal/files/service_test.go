@@ -13,7 +13,7 @@ import (
 )
 
 func TestServiceUploadRejectsEmptyFileName(t *testing.T) {
-	service := NewService(&fakeRepository{}, &fakeStorage{}, 1024)
+	service := NewService(&fakeRepository{}, &fakeStorage{}, fakePolicyProvider{maxUploadBytes: 1024})
 
 	_, err := service.Upload(context.Background(), "user-1", "device-1", "", "text/plain", strings.NewReader("hello"))
 	if err == nil || !strings.Contains(err.Error(), "file name is required") {
@@ -22,7 +22,7 @@ func TestServiceUploadRejectsEmptyFileName(t *testing.T) {
 }
 
 func TestServiceRenameRejectsEmptyFileName(t *testing.T) {
-	service := NewService(&fakeRepository{}, &fakeStorage{}, 1024)
+	service := NewService(&fakeRepository{}, &fakeStorage{}, fakePolicyProvider{maxUploadBytes: 1024})
 
 	_, err := service.Rename(context.Background(), "user-1", "device-1", "file-1", "")
 	if err == nil || !strings.Contains(err.Error(), "file name is required") {
@@ -32,7 +32,7 @@ func TestServiceRenameRejectsEmptyFileName(t *testing.T) {
 
 func TestServiceListNormalizesPagination(t *testing.T) {
 	repo := &fakeRepository{}
-	service := NewService(repo, &fakeStorage{}, 1024)
+	service := NewService(repo, &fakeStorage{}, fakePolicyProvider{maxUploadBytes: 1024})
 
 	result, err := service.List(context.Background(), "user-1", "device-1", 0, 999)
 	if err != nil {
@@ -61,7 +61,7 @@ func TestServiceUploadRollsBackStoredFileWhenMetadataFails(t *testing.T) {
 			SHA256:     "hash",
 		},
 	}
-	service := NewService(repo, store, 1024)
+	service := NewService(repo, store, fakePolicyProvider{maxUploadBytes: 1024})
 
 	_, err := service.Upload(context.Background(), "user-1", "device-1", "file.txt", "text/plain", strings.NewReader("hello"))
 	if err == nil {
@@ -75,7 +75,7 @@ func TestServiceUploadRollsBackStoredFileWhenMetadataFails(t *testing.T) {
 func TestServiceUploadMapsTooLargeError(t *testing.T) {
 	repo := &fakeRepository{deviceName: "My Device"}
 	store := &fakeStorage{saveErr: filestore.ErrFileTooLarge}
-	service := NewService(repo, store, 3)
+	service := NewService(repo, store, fakePolicyProvider{maxUploadBytes: 3})
 
 	_, err := service.Upload(context.Background(), "user-1", "device-1", "file.txt", "text/plain", strings.NewReader("hello"))
 	if !errors.Is(err, ErrFileTooLarge) {
@@ -136,6 +136,18 @@ type fakeStorage struct {
 	saveResult  filestore.SaveResult
 	saveErr     error
 	deletedPath string
+}
+
+type fakePolicyProvider struct {
+	maxUploadBytes int64
+}
+
+func (p fakePolicyProvider) PrepareUploadReader(_ context.Context, _ string, src io.Reader) (io.Reader, int64, error) {
+	return src, p.maxUploadBytes, nil
+}
+
+func (p fakePolicyProvider) CurrentMaxUploadBytes(context.Context, string) (int64, error) {
+	return p.maxUploadBytes, nil
 }
 
 func (s *fakeStorage) Save(context.Context, string, string, io.Reader, int64) (filestore.SaveResult, error) {

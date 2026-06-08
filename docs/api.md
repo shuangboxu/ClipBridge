@@ -1,6 +1,6 @@
 # ClipBridge API 说明
 
-本文档记录第一阶段当前已经落地的接口，范围覆盖：
+本文档记录当前已经落地的接口，范围覆盖：
 
 - 健康检查
 - 用户注册
@@ -19,9 +19,18 @@
 - 文件下载
 - 文件重命名
 - 文件删除
+- 存储配额申请
+- 上传/下载带宽申请
+- 管理员申请
+- 管理员设置
+- 用户管理
+- 申请审批
+- 文本分享创建
+- 文件分享创建
+- 分享列表查询
+- 分享撤销
+- 公开取件页基础访问
 - WebSocket 实时推送
-
-后续随着分享、管理员能力逐步完成，再继续补充。
 
 当前线上默认已关闭公开注册。
 如果后续需要重新开放，需把 `AUTH_ALLOW_REGISTRATION` 改成 `true` 后重启服务。
@@ -320,14 +329,36 @@ Authorization: Bearer <access_token>
     "user": {
       "id": "4c3a7db2-9fb3-4baf-9c83-7a467fdaf861",
       "username": "alice",
+      "is_admin": false,
+      "storage_quota_bytes": 104857600,
+      "upload_bandwidth_kbps": 2048,
+      "download_bandwidth_kbps": 4096,
       "created_at": "2026-05-23T07:40:00Z",
       "updated_at": "2026-05-23T07:40:00Z"
     },
-    "current_device_id": "8a17fd87-50a2-4cd3-aabc-1d9d2c08f944"
+    "current_device_id": "8a17fd87-50a2-4cd3-aabc-1d9d2c08f944",
+    "storage_used_bytes": 12582912,
+    "storage_free_bytes": 92274688,
+    "limits": {
+      "max_user_count": 200,
+      "default_storage_quota_bytes": 104857600,
+      "default_upload_bandwidth_kbps": 2048,
+      "default_download_bandwidth_kbps": 4096,
+      "max_user_upload_bandwidth_kbps": 10240,
+      "max_user_download_bandwidth_kbps": 20480,
+      "max_upload_file_bytes": 67108864,
+      "allow_registration": false
+    }
   },
   "request_id": "8f6c99f1c2d14b77"
 }
 ```
+
+说明：
+
+- `user` 是当前账号的最新角色与额度快照
+- `storage_used_bytes` / `storage_free_bytes` 可直接用于额度概览
+- `limits` 是当前系统全局限制快照，客户端可拿来展示默认值和上限
 
 ### 3.8 设备列表
 
@@ -679,7 +710,514 @@ Authorization: Bearer <access_token>
 - 服务端会先删数据库记录，再尝试删磁盘文件
 - 响应里的 `disk_removed=false` 表示记录删掉了，但磁盘文件清理失败，需要后续人工排查
 
-### 3.20 WebSocket 实时推送
+### 3.20 文本分享创建
+
+```http
+POST /v1/shares/text
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体示例：
+
+```json
+{
+  "text_content": "hello share",
+  "never_expires": false,
+  "expire_seconds": 86400,
+  "burn_mode": "countdown",
+  "burn_after_seconds": 300,
+  "allow_copy_content": false,
+  "is_encrypted": false
+}
+```
+
+加密文本分享时：
+
+- `is_encrypted=true`
+- `password` 必填
+- `encrypted_payload` 必填
+- `encryption` 必填
+- 明文 `text_content` 可留空
+
+说明：
+
+- `burn_mode` 支持：
+  - `none`
+  - `once`
+  - `countdown`
+- `expire_seconds` 默认 `86400`
+- `burn_mode=countdown` 时，`burn_after_seconds` 必须大于 `0`
+- `allow_copy_content` 只影响公开文本取件页
+
+### 3.21 文件分享创建
+
+```http
+POST /v1/shares/file
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+- `file`
+  - 必填
+- `original_name`
+  - 可选
+  - 浏览器先加密文件时，建议额外带上原始文件名
+- `original_content_type`
+  - 可选
+  - 浏览器先加密文件时，建议额外带上原始 MIME
+- `never_expires`
+- `expire_seconds`
+- `burn_mode`
+- `burn_after_seconds`
+- `is_encrypted`
+- `password`
+- `encryption`
+
+说明：
+
+- 明文文件分享会直接保存原始文件体
+- 加密文件分享建议由 Web 端先把文件加密成 `encrypted.bin` 后再上传
+- 服务端仍会保存原始文件名和原始 MIME，便于公开页解密后恢复下载文件名
+
+### 3.22 分享列表查询
+
+```http
+GET /v1/shares?page=1&page_size=20&status=active
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- `status` 可选：
+  - `all`
+  - `active`
+  - `expired`
+  - `consumed`
+  - `revoked`
+- 返回里会带：
+  - `token`
+  - `content_kind`
+  - `status`
+  - `is_encrypted`
+  - `burn_mode`
+  - `remaining_seconds`
+  - 文本预览或文件元数据
+
+### 3.23 分享撤销
+
+```http
+POST /v1/shares/{id}/revoke
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 撤销后公开取件页会返回 `410 share is no longer available`
+- 已撤销分享仍会保留在列表里，方便用户回看状态
+
+### 3.24 公开取件页接口
+
+元信息：
+
+```http
+GET /v1/public/shares/{token}/meta
+```
+
+公开取件：
+
+```http
+POST /v1/public/shares/{token}/content
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "password": "1234"
+}
+```
+
+说明：
+
+- 文本分享成功时返回 JSON
+- 文件分享成功时直接返回文件流
+- 加密文件分享会在响应头里额外返回解密元数据，便于浏览器解密后再触发下载
+- 公开接口会按下面顺序判断是否还能访问：
+  - 是否已撤销
+  - 是否已焚毁
+  - 是否已过期
+  - 密码是否正确
+
+常见失败：
+
+- `401 invalid password`
+- `404 share not found`
+- `410 share is no longer available`
+
+### 3.25 我的存储配额申请
+
+创建申请：
+
+```http
+POST /v1/account/quota-requests
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "requested_quota_mb": 512,
+  "reason": "需要同步更多课程资料"
+}
+```
+
+查询我的申请记录：
+
+```http
+GET /v1/account/quota-requests?status=all
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- `requested_quota_mb` 单位固定是 `MB`
+- `status` 可选：`all`、`pending`、`approved`、`rejected`
+- 响应记录里的 `requested_quota_bytes` / `current_quota_bytes` 都是字节
+
+常见失败：
+
+- `400 request payload is invalid`
+- `409 you already have a pending quota request`
+
+### 3.26 我的带宽申请
+
+创建申请：
+
+```http
+POST /v1/account/bandwidth-requests
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "requested_upload_kbps": 4096,
+  "requested_download_kbps": 8192,
+  "reason": "需要上传大文件和多端同步"
+}
+```
+
+查询我的申请记录：
+
+```http
+GET /v1/account/bandwidth-requests?status=all
+Authorization: Bearer <access_token>
+```
+
+说明：
+
+- 上传和下载都使用 `Kbps`
+- 响应记录会返回当前值、申请值、审核备注、审核人和审核时间
+
+常见失败：
+
+- `400 request payload is invalid`
+- `409 you already have a pending bandwidth request`
+
+### 3.27 我的管理员申请
+
+创建申请：
+
+```http
+POST /v1/account/admin-requests
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "reason": "需要在手机端帮团队处理审批"
+}
+```
+
+查询我的申请记录：
+
+```http
+GET /v1/account/admin-requests?status=all
+Authorization: Bearer <access_token>
+```
+
+常见失败：
+
+- `400 request payload is invalid`
+- `409 you already have a pending admin request`
+- `409 you are already an admin`
+
+### 3.28 管理员系统设置
+
+读取设置：
+
+```http
+GET /v1/admin/settings
+Authorization: Bearer <access_token>
+```
+
+更新设置：
+
+```http
+PUT /v1/admin/settings
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体示例：
+
+```json
+{
+  "max_user_count": 200,
+  "default_storage_quota_mb": 100,
+  "default_upload_bandwidth_kbps": 2048,
+  "default_download_bandwidth_kbps": 4096,
+  "max_user_upload_bandwidth_kbps": 10240,
+  "max_user_download_bandwidth_kbps": 20480,
+  "max_upload_file_mb": 64,
+  "allow_registration": false
+}
+```
+
+成功响应里的 `data` 结构：
+
+```json
+{
+  "settings": {
+    "max_user_count": 200,
+    "default_storage_quota_bytes": 104857600,
+    "default_upload_bandwidth_kbps": 2048,
+    "default_download_bandwidth_kbps": 4096,
+    "max_user_upload_bandwidth_kbps": 10240,
+    "max_user_download_bandwidth_kbps": 20480,
+    "max_upload_file_bytes": 67108864,
+    "allow_registration": false,
+    "updated_at": "2026-06-01T10:00:00Z"
+  },
+  "current_user_count": 12
+}
+```
+
+说明：
+
+- 请求里的存储和文件大小单位是 `MB`
+- 响应里的存储和文件大小字段统一返回字节
+
+常见失败：
+
+- `400 request payload is invalid`
+- `403 admin permission is required`
+
+### 3.29 管理员用户管理
+
+用户列表：
+
+```http
+GET /v1/admin/users
+Authorization: Bearer <access_token>
+```
+
+更新用户：
+
+```http
+PATCH /v1/admin/users/{id}
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体示例：
+
+```json
+{
+  "storage_quota_mb": 512,
+  "upload_bandwidth_kbps": 4096,
+  "download_bandwidth_kbps": 8192,
+  "is_admin": true
+}
+```
+
+删除用户：
+
+```http
+DELETE /v1/admin/users/{id}
+Authorization: Bearer <access_token>
+```
+
+用户列表每条记录会返回：
+
+- `is_admin`
+- `storage_quota_bytes`
+- `storage_used_bytes`
+- `storage_free_bytes`
+- `upload_bandwidth_kbps`
+- `download_bandwidth_kbps`
+- `has_pending_quota_request`
+- `has_pending_bandwidth_request`
+- `has_pending_admin_request`
+- `last_active_at`
+- `created_at`
+- `updated_at`
+
+常见失败：
+
+- `400 request payload is invalid`
+- `403 admin permission is required`
+- `404 resource not found`
+- `409 cannot remove the last admin`
+
+### 3.30 管理员审批存储配额申请
+
+待审批列表：
+
+```http
+GET /v1/admin/quota-requests?status=pending
+Authorization: Bearer <access_token>
+```
+
+批准：
+
+```http
+POST /v1/admin/quota-requests/{id}/approve
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "approved_quota_mb": 512,
+  "review_note": "按业务需求上调"
+}
+```
+
+拒绝：
+
+```http
+POST /v1/admin/quota-requests/{id}/reject
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "review_note": "当前配额已足够"
+}
+```
+
+常见失败：
+
+- `403 admin permission is required`
+- `404 resource not found`
+- `409 request is not pending`
+
+### 3.31 管理员审批带宽申请
+
+待审批列表：
+
+```http
+GET /v1/admin/bandwidth-requests?status=pending
+Authorization: Bearer <access_token>
+```
+
+批准：
+
+```http
+POST /v1/admin/bandwidth-requests/{id}/approve
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "approved_upload_kbps": 4096,
+  "approved_download_kbps": 8192,
+  "review_note": "按申请值通过"
+}
+```
+
+拒绝：
+
+```http
+POST /v1/admin/bandwidth-requests/{id}/reject
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "review_note": "当前带宽策略不允许继续上调"
+}
+```
+
+常见失败：
+
+- `403 admin permission is required`
+- `404 resource not found`
+- `409 request is not pending`
+
+### 3.32 管理员审批管理员申请
+
+待审批列表：
+
+```http
+GET /v1/admin/admin-requests?status=pending
+Authorization: Bearer <access_token>
+```
+
+批准：
+
+```http
+POST /v1/admin/admin-requests/{id}/approve
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+拒绝：
+
+```http
+POST /v1/admin/admin-requests/{id}/reject
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+这两个接口的请求体都只有一个字段：
+
+```json
+{
+  "review_note": "同意在移动端参与日常管理"
+}
+```
+
+常见失败：
+
+- `403 admin permission is required`
+- `404 resource not found`
+- `409 request is not pending`
+
+### 3.33 WebSocket 实时推送
 
 连接方式：
 
@@ -723,7 +1261,7 @@ GET /v1/ws?access_token=<access_token>
 - `sync.heartbeat` 当前默认每 `20` 秒发送一次
 - Web 端建议在检测到序号缺口时立刻回退到 `GET /v1/sync/pull`
 
-### 3.21 受保护示例接口
+### 3.34 受保护示例接口
 
 ```http
 GET /v1/system/profile
@@ -738,10 +1276,9 @@ Authorization: Bearer <access_token>
 
 - 登录、刷新、退出登录
 - 当前账号信息与设备管理
+- 配额申请、带宽申请、管理员申请
+- 管理员设置、用户管理、审批
 - 文本上传、历史查询、补拉、ACK
 - 文件上传、列表、下载、重命名、删除
+- 文本分享、文件分享、公开取件、撤销、过期与焚毁
 - WebSocket 实时推送
-
-当前仍未实现：
-
-- 分享与管理员能力

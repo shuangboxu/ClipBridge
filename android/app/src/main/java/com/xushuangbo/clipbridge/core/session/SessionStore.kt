@@ -10,6 +10,10 @@ data class StoredSession(
     val currentDeviceId: String = "",
     val username: String = "",
     val deviceName: String = "",
+    val isAdmin: Boolean = false,
+    val storageQuotaBytes: Long = 0L,
+    val uploadBandwidthKbps: Int = 0,
+    val downloadBandwidthKbps: Int = 0,
 ) {
     fun hasServerAddress(): Boolean = baseUrl.isNotBlank()
 
@@ -41,6 +45,10 @@ interface SessionStore {
         deviceName: String,
         currentDeviceId: String,
         tokens: TokenBundle,
+        isAdmin: Boolean = false,
+        storageQuotaBytes: Long = 0L,
+        uploadBandwidthKbps: Int = 0,
+        downloadBandwidthKbps: Int = 0,
     )
 
     fun updateTokens(tokens: TokenBundle)
@@ -61,6 +69,10 @@ class PreferenceSessionStore(
             currentDeviceId = preferences.getString(KEY_CURRENT_DEVICE_ID, "").orEmpty(),
             username = preferences.getString(KEY_USERNAME, "").orEmpty(),
             deviceName = preferences.getString(KEY_DEVICE_NAME, "").orEmpty(),
+            isAdmin = preferences.getBoolean(KEY_IS_ADMIN, false),
+            storageQuotaBytes = preferences.getLong(KEY_STORAGE_QUOTA_BYTES, 0L),
+            uploadBandwidthKbps = preferences.getInt(KEY_UPLOAD_BANDWIDTH_KBPS, 0),
+            downloadBandwidthKbps = preferences.getInt(KEY_DOWNLOAD_BANDWIDTH_KBPS, 0),
         )
     }
 
@@ -102,6 +114,10 @@ class PreferenceSessionStore(
         deviceName: String,
         currentDeviceId: String,
         tokens: TokenBundle,
+        isAdmin: Boolean,
+        storageQuotaBytes: Long,
+        uploadBandwidthKbps: Int,
+        downloadBandwidthKbps: Int,
     ) {
         // 登录成功后要把关键字段一次写完，避免中途只写入一半时出现“半登录态”。
         preferences.edit()
@@ -111,6 +127,10 @@ class PreferenceSessionStore(
             .putString(KEY_CURRENT_DEVICE_ID, currentDeviceId)
             .putString(KEY_ACCESS_TOKEN, tokens.accessToken)
             .putString(KEY_REFRESH_TOKEN, tokens.refreshToken)
+            .putBoolean(KEY_IS_ADMIN, isAdmin)
+            .putLong(KEY_STORAGE_QUOTA_BYTES, storageQuotaBytes)
+            .putInt(KEY_UPLOAD_BANDWIDTH_KBPS, uploadBandwidthKbps)
+            .putInt(KEY_DOWNLOAD_BANDWIDTH_KBPS, downloadBandwidthKbps)
             .apply()
     }
 
@@ -135,6 +155,10 @@ class PreferenceSessionStore(
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_CURRENT_DEVICE_ID)
             .remove(KEY_USERNAME)
+            .remove(KEY_IS_ADMIN)
+            .remove(KEY_STORAGE_QUOTA_BYTES)
+            .remove(KEY_UPLOAD_BANDWIDTH_KBPS)
+            .remove(KEY_DOWNLOAD_BANDWIDTH_KBPS)
             .apply()
     }
 
@@ -145,6 +169,10 @@ class PreferenceSessionStore(
         const val KEY_CURRENT_DEVICE_ID = "current_device_id"
         const val KEY_USERNAME = "username"
         const val KEY_DEVICE_NAME = "device_name"
+        const val KEY_IS_ADMIN = "is_admin"
+        const val KEY_STORAGE_QUOTA_BYTES = "storage_quota_bytes"
+        const val KEY_UPLOAD_BANDWIDTH_KBPS = "upload_bandwidth_kbps"
+        const val KEY_DOWNLOAD_BANDWIDTH_KBPS = "download_bandwidth_kbps"
         const val KEY_SYNC_ENABLED = "sync_enabled"
         const val KEY_LAST_ACK_SEQ = "last_ack_seq"
     }

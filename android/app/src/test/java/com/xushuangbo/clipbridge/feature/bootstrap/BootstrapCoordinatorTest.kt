@@ -3,6 +3,7 @@ package com.xushuangbo.clipbridge.feature.bootstrap
 import com.xushuangbo.clipbridge.core.network.AuthApiClient
 import com.xushuangbo.clipbridge.core.network.AuthApiException
 import com.xushuangbo.clipbridge.core.network.AuthResult
+import com.xushuangbo.clipbridge.core.network.AccountProfileResult
 import com.xushuangbo.clipbridge.core.network.ChangePasswordResult
 import com.xushuangbo.clipbridge.core.network.DeviceListResult
 import com.xushuangbo.clipbridge.core.network.DeviceMutationResult
@@ -43,7 +44,7 @@ class BootstrapCoordinatorTest {
             lastAckSeq = 12L,
         )
         val authApiClient = FakeAuthApiClient(
-            currentAccountResult = AuthResult(
+            currentAccountResult = AccountProfileResult(
                 userId = "user-1",
                 username = "alice",
                 currentDeviceId = "device-1",
@@ -134,6 +135,10 @@ private class FakeSessionStore(
         deviceName: String,
         currentDeviceId: String,
         tokens: TokenBundle,
+        isAdmin: Boolean,
+        storageQuotaBytes: Long,
+        uploadBandwidthKbps: Int,
+        downloadBandwidthKbps: Int,
     ) {
         storedSession = StoredSession(
             baseUrl = baseUrl,
@@ -142,6 +147,10 @@ private class FakeSessionStore(
             currentDeviceId = currentDeviceId,
             username = username,
             deviceName = deviceName,
+            isAdmin = isAdmin,
+            storageQuotaBytes = storageQuotaBytes,
+            uploadBandwidthKbps = uploadBandwidthKbps,
+            downloadBandwidthKbps = downloadBandwidthKbps,
         )
     }
 
@@ -167,7 +176,7 @@ private class FakeSessionStore(
 }
 
 private class FakeAuthApiClient(
-    private val currentAccountResult: AuthResult = AuthResult(
+    private val currentAccountResult: AccountProfileResult = AccountProfileResult(
         userId = "user-1",
         username = "alice",
         currentDeviceId = "device-1",
@@ -202,7 +211,7 @@ private class FakeAuthApiClient(
     override suspend fun getCurrentAccount(
         session: StoredSession,
         onRefreshing: (() -> Unit)?,
-    ): AuthResult {
+    ): AccountProfileResult {
         currentAccountError?.let { throw it }
         if (triggersRefreshing) {
             onRefreshing?.invoke()

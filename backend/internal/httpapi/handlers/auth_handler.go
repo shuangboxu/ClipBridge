@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -14,7 +15,12 @@ import (
 
 type AuthHandler struct {
 	authService       *auth.Service
+	adminService      authAdminService
 	allowRegistration bool
+}
+
+type authAdminService interface {
+	RegistrationAllowed(ctx context.Context) (bool, error)
 }
 
 type registerRequest struct {
@@ -40,10 +46,14 @@ type logoutRequest struct {
 }
 
 type authUserData struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID                    string `json:"id"`
+	Username              string `json:"username"`
+	IsAdmin               bool   `json:"is_admin"`
+	StorageQuotaBytes     int64  `json:"storage_quota_bytes"`
+	UploadBandwidthKbps   int    `json:"upload_bandwidth_kbps"`
+	DownloadBandwidthKbps int    `json:"download_bandwidth_kbps"`
+	CreatedAt             string `json:"created_at"`
+	UpdatedAt             string `json:"updated_at"`
 }
 
 type authDeviceData struct {
@@ -66,16 +76,30 @@ func NewAuthHandler(application *app.App) *AuthHandler {
 	if application == nil {
 		return &AuthHandler{}
 	}
-	return &AuthHandler{
+	handler := &AuthHandler{
 		authService:       application.AuthService,
 		allowRegistration: application.Config.Auth.AllowRegistration,
 	}
+	if application.AdminService != nil {
+		handler.adminService = application.AdminService
+	}
+	return handler
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	allowRegistration := h.allowRegistration
+	if h.adminService != nil {
+		allowed, err := h.adminService.RegistrationAllowed(r.Context())
+		if err != nil {
+			response.Error(w, r, http.StatusInternalServerError, "query registration policy failed")
+			return
+		}
+		allowRegistration = allowed
+	}
+
 	// 当前项目默认不开放公开注册。
 	// 只有显式打开配置后，才允许外部调用注册接口。
-	if !h.allowRegistration {
+	if !allowRegistration {
 		response.Error(w, r, http.StatusForbidden, "registration is disabled")
 		return
 	}
@@ -201,10 +225,14 @@ func buildSessionResponse(session auth.Session) map[string]any {
 
 func buildUserData(user auth.User) authUserData {
 	return authUserData{
-		ID:        user.ID,
-		Username:  user.Username,
-		CreatedAt: formatTime(user.CreatedAt),
-		UpdatedAt: formatTime(user.UpdatedAt),
+		ID:                    user.ID,
+		Username:              user.Username,
+		IsAdmin:               user.IsAdmin,
+		StorageQuotaBytes:     user.StorageQuotaBytes,
+		UploadBandwidthKbps:   user.UploadBandwidthKbps,
+		DownloadBandwidthKbps: user.DownloadBandwidthKbps,
+		CreatedAt:             formatTime(user.CreatedAt),
+		UpdatedAt:             formatTime(user.UpdatedAt),
 	}
 }
 
