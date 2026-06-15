@@ -4,14 +4,13 @@ export const STORAGE_KEYS = {
     shareRules: "clipbridge.web.share-rules"
 };
 
-export const DEFAULT_ROUTE = "dashboard";
+export const DEFAULT_ROUTE = "history";
 export const AUTH_ROUTE = "login";
 
 export const NAV_ITEMS = [
-    { route: "dashboard", title: "总览", icon: "dashboard", ready: true },
     { route: "history", title: "历史", icon: "history", ready: true },
-    { route: "devices", title: "设备", icon: "devices", ready: true },
     { route: "files", title: "文件", icon: "files", ready: true },
+    { route: "devices", title: "设备", icon: "devices", ready: true },
     { route: "shares", title: "分享", icon: "shares", ready: true },
     { route: "requests", title: "申请", icon: "requests", ready: true },
     { route: "admin", title: "管理", icon: "admin", ready: true, adminOnly: true },
@@ -36,8 +35,7 @@ export function getRouteMeta(route) {
             return { title: "管理员" };
         case "ai":
             return { title: "AI 工具" };
-        case "dashboard":
         default:
-            return { title: "总览" };
+            return { title: "文本同步" };
     }
 }

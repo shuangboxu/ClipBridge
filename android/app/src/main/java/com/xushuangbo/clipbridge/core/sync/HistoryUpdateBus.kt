@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 /**
  * 历史更新事件总线。
  *
- * 后台同步服务在发现历史有新增内容后，会往这里发一条通知；
- * 历史页 ViewModel 订阅这条通知后，就可以决定是自动刷新，还是只提示“有新内容”。
+ * 后台同步、单条删除、批量清理等动作都会往这里发通知；
+ * 历史页和历史设置页订阅后，就可以统一决定是否刷新当前数据。
  */
 class HistoryUpdateBus {
     private val _events = MutableSharedFlow<HistoryUpdateEvent>(
@@ -22,12 +22,16 @@ class HistoryUpdateBus {
     fun notifyHistoryUpdated(itemCount: Int = 1) {
         _events.tryEmit(
             HistoryUpdateEvent(
-                itemCount = itemCount.coerceAtLeast(1),
+                itemCount = itemCount.coerceAtLeast(0),
             ),
         )
+    }
+
+    fun notifyHistoryChanged() {
+        notifyHistoryUpdated(itemCount = 0)
     }
 }
 
 data class HistoryUpdateEvent(
-    val itemCount: Int = 1,
+    val itemCount: Int = 0,
 )

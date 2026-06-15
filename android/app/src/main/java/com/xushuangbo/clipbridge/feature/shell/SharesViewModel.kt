@@ -48,6 +48,7 @@ data class SharesUiState(
     val pageSize: Int = 20,
     val maxUploadBytes: Long = 0L,
     val latestShareLink: String = "",
+    val createSuccessVersion: Int = 0,
     val isLoading: Boolean = false,
     val isCreating: Boolean = false,
     val revokingShareId: String = "",
@@ -358,6 +359,7 @@ class SharesViewModel(
                 textDraft = if (clearTextDraft) "" else it.textDraft,
                 selectedFile = if (clearSelectedFile) null else it.selectedFile,
                 latestShareLink = latestShareLink,
+                createSuccessVersion = it.createSuccessVersion + 1,
                 errorMessage = if (latestShareLink.isBlank()) {
                     "分享已创建，但当前服务地址无法生成公开链接"
                 } else {

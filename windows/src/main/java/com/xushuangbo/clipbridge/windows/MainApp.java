@@ -105,6 +105,7 @@ public class MainApp extends Application {
     private static final int DEVICE_PAGE_SIZE = 10;
     private static final int SHARE_PAGE_SIZE = 10;
     private static final long BYTES_PER_MB = 1024L * 1024L;
+    private static final String PROJECT_GITHUB_URL = "https://github.com/shuangboxu/ClipBridge";
 
     private final AppStateStore stateStore = new AppStateStore();
     private final ApiClient apiClient = new ApiClient(stateStore);
@@ -173,6 +174,7 @@ public class MainApp extends Application {
     private TextArea historyManualUploadArea;
     private TextArea historyDetailTextArea;
     private Label historyDetailMetaLabel;
+    private Button historyDeleteButton;
     private Label historyPageLabel;
     private Button historyPrevButton;
     private Button historyNextButton;
@@ -299,6 +301,8 @@ public class MainApp extends Application {
     private Label settingsAccountInfoLabel;
     private TextField settingsBaseUrlField;
     private TextField settingsDeviceNameField;
+    private TextField settingsHistoryRetentionDaysField;
+    private TextField settingsHistoryLimitField;
     private PasswordField settingsCurrentPasswordField;
     private PasswordField settingsNewPasswordField;
     private PasswordField settingsConfirmPasswordField;
@@ -779,7 +783,11 @@ public class MainApp extends Application {
                 showToast("历史文本已复制到系统剪贴板");
             }
         });
-        detailColumn.getChildren().addAll(detailTitle, historyDetailMetaLabel, historyDetailTextArea, copyButton);
+        historyDeleteButton = createDangerButton("删除当前记录");
+        historyDeleteButton.setDisable(true);
+        historyDeleteButton.setOnAction(event -> deleteSelectedHistoryItem());
+        HBox detailActions = new HBox(10, copyButton, historyDeleteButton);
+        detailColumn.getChildren().addAll(detailTitle, historyDetailMetaLabel, historyDetailTextArea, detailActions);
 
         SplitPane splitPane = new SplitPane(listColumn, detailColumn);
         splitPane.setDividerPositions(0.62);
@@ -1447,6 +1455,10 @@ public class MainApp extends Application {
         settingsBaseUrlField.setPromptText("服务地址");
         settingsDeviceNameField = new TextField();
         settingsDeviceNameField.setPromptText("设备名");
+        settingsHistoryRetentionDaysField = new TextField("0");
+        settingsHistoryRetentionDaysField.setPromptText("0 表示不限时间");
+        settingsHistoryLimitField = new TextField("1000");
+        settingsHistoryLimitField.setPromptText("最多保留条数");
 
         settingsCurrentPasswordField = new PasswordField();
         settingsCurrentPasswordField.setPromptText("当前密码");
@@ -1488,6 +1500,7 @@ public class MainApp extends Application {
 
     private void openSettingsModal() {
         refreshSettingsModal();
+        refreshHistorySettingsAsync();
         showSettingsModule(activeSettingsModule);
         settingsStage.show();
         settingsStage.toFront();
@@ -1529,6 +1542,7 @@ public class MainApp extends Application {
             case SHARES -> buildShareSettingsModule();
             case SECURITY -> buildSecuritySettingsModule();
             case SESSION -> buildSessionSettingsModule();
+            case ABOUT -> buildAboutSettingsModule();
             case GENERAL -> buildGeneralSettingsModule();
         };
     }
@@ -1540,6 +1554,12 @@ public class MainApp extends Application {
         saveDeviceNameButton.setOnAction(event -> saveCurrentDeviceName());
         Button saveRuntimeButton = createPrimaryButton("保存运行设置");
         saveRuntimeButton.setOnAction(event -> saveRuntimeSettings());
+        Button saveHistorySettingsButton = createPrimaryButton("保存历史设置");
+        saveHistorySettingsButton.setOnAction(event -> saveHistorySettings());
+        Button cleanupHistoryButton = createGhostButton("按保留天数立即清理");
+        cleanupHistoryButton.setOnAction(event -> cleanupHistoryByRetentionDays());
+        Button clearHistoryButton = createDangerButton("清空全部历史");
+        clearHistoryButton.setOnAction(event -> clearClipboardHistory());
 
         VBox content = new VBox(16);
         content.getChildren().addAll(
@@ -1556,6 +1576,12 @@ public class MainApp extends Application {
                 settingsAutoStartCheck,
                 settingsStartInTrayCheck,
                 saveRuntimeButton
+            )),
+            createRequestCard("历史记录", List.of(
+                createSmallMutedLabel("保留天数填 0 表示不限时间；最大记录数默认 1000，Web / Android / Windows 共用同一套服务端设置。"),
+                createLabeledField("保留天数", settingsHistoryRetentionDaysField),
+                createLabeledField("最大记录数", settingsHistoryLimitField),
+                new HBox(10, saveHistorySettingsButton, cleanupHistoryButton, clearHistoryButton)
             ))
         );
         return content;
@@ -1596,6 +1622,23 @@ public class MainApp extends Application {
         VBox content = new VBox(16);
         content.getChildren().add(
             createRequestCard("会话", List.of(logoutButton))
+        );
+        return content;
+    }
+
+    private Node buildAboutSettingsModule() {
+        Label githubUrlLabel = createSecondaryValueLabel(PROJECT_GITHUB_URL);
+        Button openGithubButton = createGhostButton("打开 GitHub");
+        openGithubButton.setOnAction(event -> openProjectGithub());
+
+        VBox content = new VBox(16);
+        content.getChildren().add(
+            createRequestCard("关于", List.of(
+                createLabeledField("GitHub 仓库", githubUrlLabel),
+                openGithubButton,
+                createLabeledField("Windows 下载", createSecondaryValueLabel("即将开放")),
+                createLabeledField("Android 下载", createSecondaryValueLabel("即将开放"))
+            ))
         );
         return content;
     }
@@ -1810,6 +1853,29 @@ public class MainApp extends Application {
         clearSettingsNotice();
     }
 
+    private void refreshHistorySettingsAsync() {
+        if (settingsHistoryRetentionDaysField == null || settingsHistoryLimitField == null) {
+            return;
+        }
+        runTask(
+            apiClient::getClipboardHistorySettings,
+            this::applyClipboardHistorySettings,
+            error -> {
+                if (settingsStage != null && settingsStage.isShowing()) {
+                    showSettingsNotice("加载历史设置失败: " + error.getMessage());
+                }
+            }
+        );
+    }
+
+    private void applyClipboardHistorySettings(ApiModels.ClipboardHistorySettings settings) {
+        if (settings == null) {
+            return;
+        }
+        settingsHistoryRetentionDaysField.setText(String.valueOf(settings.retentionDays()));
+        settingsHistoryLimitField.setText(String.valueOf(settings.historyLimit()));
+    }
+
     private void applyProfileToShell(AccountProfile profile) {
         topUserLabel.setText(nonBlank(profile.username(), "未登录"));
         AppState state = stateStore.getState();
@@ -1933,6 +1999,7 @@ public class MainApp extends Application {
         if (item == null) {
             historyDetailMetaLabel.setText("选择左侧记录后显示完整内容。");
             historyDetailTextArea.setText("");
+            historyDeleteButton.setDisable(true);
             return;
         }
         historyDetailMetaLabel.setText(
@@ -1941,6 +2008,7 @@ public class MainApp extends Application {
                 " · 来源 " + nonBlank(item.originDeviceId(), "未知设备")
         );
         historyDetailTextArea.setText(item.textContent());
+        historyDeleteButton.setDisable(false);
     }
 
     private void updateDeviceDetail(DeviceInfo device) {
@@ -2089,6 +2157,29 @@ public class MainApp extends Application {
                 refreshHistoryPageAsync(true);
             },
             error -> showPageNotice(NavPage.HISTORY, "上传文本失败: " + error.getMessage())
+        );
+    }
+
+    private void deleteSelectedHistoryItem() {
+        ClipboardItem selected = historyListView.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        if (!confirmDanger("确认删除这条历史记录吗？删除后各端历史列表都不会再显示它。")) {
+            return;
+        }
+
+        boolean fallbackToPreviousPage = historyItems.size() <= 1 && historyPageIndex > 0;
+        runTask(
+            () -> apiClient.deleteClipboardItem(selected.id()),
+            result -> {
+                if (fallbackToPreviousPage) {
+                    historyPageIndex -= 1;
+                }
+                showToast(result.deletedCount() > 0 ? "历史记录已删除" : "这条历史记录已经不存在");
+                invalidateHistoryPages(false);
+            },
+            error -> showPageNotice(NavPage.HISTORY, "删除历史记录失败: " + error.getMessage())
         );
     }
 
@@ -2535,6 +2626,102 @@ public class MainApp extends Application {
             settingsSyncEnabledCheck.setSelected(enabled);
         }
         showToast(enabled ? "已开启文本同步" : "已关闭文本同步");
+    }
+
+    private void saveHistorySettings() {
+        int retentionDays;
+        int historyLimit;
+        try {
+            retentionDays = Integer.parseInt(nonBlank(settingsHistoryRetentionDaysField.getText(), "0").trim());
+            historyLimit = Integer.parseInt(nonBlank(settingsHistoryLimitField.getText(), "").trim());
+        } catch (Exception error) {
+            showSettingsNotice("保留天数和最大记录数都必须是整数。");
+            return;
+        }
+        if (retentionDays < 0) {
+            showSettingsNotice("保留天数不能小于 0。");
+            return;
+        }
+        if (historyLimit <= 0) {
+            showSettingsNotice("最大记录数必须大于 0。");
+            return;
+        }
+
+        runTask(
+            () -> apiClient.updateClipboardHistorySettings(retentionDays, historyLimit),
+            result -> {
+                applyClipboardHistorySettings(result.settings());
+                clearSettingsNotice();
+                showToast(
+                    result.deletedCount() > 0
+                        ? "历史设置已保存，并清理了 " + result.deletedCount() + " 条记录"
+                        : "历史设置已保存"
+                );
+                if (result.deletedCount() > 0) {
+                    invalidateHistoryPages(true);
+                }
+            },
+            error -> showSettingsNotice("保存历史设置失败: " + error.getMessage())
+        );
+    }
+
+    private void cleanupHistoryByRetentionDays() {
+        int retentionDays;
+        try {
+            retentionDays = Integer.parseInt(nonBlank(settingsHistoryRetentionDaysField.getText(), "").trim());
+        } catch (Exception error) {
+            showSettingsNotice("请先填写一个有效的保留天数。");
+            return;
+        }
+        if (retentionDays <= 0) {
+            showSettingsNotice("按天清理时，保留天数必须大于 0。");
+            return;
+        }
+        if (!confirmDanger("会删除早于 " + retentionDays + " 天的历史记录，确认继续吗？")) {
+            return;
+        }
+
+        runTask(
+            () -> apiClient.cleanupClipboardHistory(retentionDays),
+            result -> {
+                applyClipboardHistorySettings(result.settings());
+                clearSettingsNotice();
+                showToast("已清理 " + result.deletedCount() + " 条历史记录");
+                invalidateHistoryPages(true);
+            },
+            error -> showSettingsNotice("清理历史记录失败: " + error.getMessage())
+        );
+    }
+
+    private void clearClipboardHistory() {
+        if (!confirmDanger("会清空当前账号下全部文本历史记录，确认继续吗？")) {
+            return;
+        }
+
+        runTask(
+            apiClient::clearClipboardHistory,
+            result -> {
+                applyClipboardHistorySettings(result.settings());
+                clearSettingsNotice();
+                if (result.deletedCount() > 0) {
+                    showToast("已清空 " + result.deletedCount() + " 条历史记录");
+                } else {
+                    showToast("当前没有可清空的历史记录");
+                }
+                invalidateHistoryPages(true);
+            },
+            error -> showSettingsNotice("清空历史记录失败: " + error.getMessage())
+        );
+    }
+
+    private void invalidateHistoryPages(boolean resetPage) {
+        // 中文注释：历史被删除或批量清理后，分页游标和本地详情区都可能已经过期。
+        // 这里统一标记历史页失效；如果用户当前就在历史页，就立刻按新状态重新加载。
+        loadedPages.remove(NavPage.HISTORY);
+        loadedPages.remove(NavPage.OVERVIEW);
+        if (currentPage == NavPage.HISTORY) {
+            refreshHistoryPageAsync(resetPage);
+        }
     }
 
     private void refreshTopBarFromState() {
@@ -3376,6 +3563,15 @@ public class MainApp extends Application {
         }
     }
 
+    private void openProjectGithub() {
+        try {
+            Desktop.getDesktop().browse(URI.create(PROJECT_GITHUB_URL));
+            showToast("已在系统浏览器中打开 GitHub 仓库");
+        } catch (Exception error) {
+            showToast("打开 GitHub 仓库失败: " + error.getMessage());
+        }
+    }
+
     private boolean confirmDanger(String message) {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.setTitle("请确认");
@@ -3566,8 +3762,8 @@ public class MainApp extends Application {
     private enum NavPage {
         OVERVIEW("总览"),
         HISTORY("历史"),
-        DEVICES("设备"),
         FILES("文件"),
+        DEVICES("设备"),
         SHARES("分享"),
         REQUESTS("申请"),
         ADMIN("管理"),
@@ -3588,7 +3784,8 @@ public class MainApp extends Application {
         GENERAL("常规"),
         SHARES("分享"),
         SECURITY("安全"),
-        SESSION("会话");
+        SESSION("会话"),
+        ABOUT("关于");
 
         private final String title;
 

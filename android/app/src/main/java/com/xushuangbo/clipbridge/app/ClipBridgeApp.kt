@@ -17,6 +17,7 @@ import com.xushuangbo.clipbridge.feature.bootstrap.SplashRoute
 import com.xushuangbo.clipbridge.feature.shell.DeviceViewModel
 import com.xushuangbo.clipbridge.feature.shell.FilesViewModel
 import com.xushuangbo.clipbridge.feature.shell.HistoryViewModel
+import com.xushuangbo.clipbridge.feature.shell.HistorySettingsViewModel
 import com.xushuangbo.clipbridge.feature.shell.MainShellRoute
 import com.xushuangbo.clipbridge.feature.shell.AdminReviewsViewModel
 import com.xushuangbo.clipbridge.feature.shell.AdminSettingsViewModel
@@ -215,6 +216,14 @@ fun ClipBridgeApp(
                 ),
             )
 
+            val historySettingsViewModel: HistorySettingsViewModel = viewModel(
+                factory = HistorySettingsViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    clipboardSyncCoordinator = resolvedContainer.clipboardSyncCoordinator,
+                    historyUpdateBus = resolvedContainer.historyUpdateBus,
+                ),
+            )
+
             // 文件页 ViewModel。
             // 负责文件上传、分页查询、下载、重命名和删除。
             val filesViewModel: FilesViewModel = viewModel(
@@ -270,6 +279,7 @@ fun ClipBridgeApp(
                 settingsViewModel = settingsViewModel,
                 deviceViewModel = deviceViewModel,
                 historyViewModel = historyViewModel,
+                historySettingsViewModel = historySettingsViewModel,
                 filesViewModel = filesViewModel,
                 sharesViewModel = sharesViewModel,
                 requestsViewModel = requestsViewModel,

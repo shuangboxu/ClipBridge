@@ -227,10 +227,17 @@ class AuthFlowUiTest {
         }
         composeRule.onNodeWithText("分享").performClick()
         composeRule.onNodeWithTag(AppTestTags.ShareScreen).assertIsDisplayed()
+        composeRule.onNodeWithTag(AppTestTags.ShareCreateButton).assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("不过期").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("过期").fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("打开一次失效").fetchSemanticsNodes().isEmpty())
+
+        composeRule.onNodeWithTag(AppTestTags.ShareCreateButton).performClick()
+        composeRule.onNodeWithTag(AppTestTags.ShareCreateDialog).assertIsDisplayed()
         composeRule.onNodeWithText("不过期").assertIsDisplayed()
         composeRule.onNodeWithText("过期").assertIsDisplayed()
         composeRule.onNodeWithText("打开一次失效").assertIsDisplayed()
-        composeRule.onNodeWithText("调整分享规则").assertIsDisplayed()
+        assertTrue(composeRule.onAllNodesWithText("调整分享规则").fetchSemanticsNodes().isEmpty())
     }
 
     @Test

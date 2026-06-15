@@ -16,6 +16,11 @@ const SETTINGS_CATEGORIES = [
         icon: "shares"
     },
     {
+        key: "history",
+        title: "历史",
+        icon: "history"
+    },
+    {
         key: "security",
         title: "安全",
         icon: "security"
@@ -24,13 +29,16 @@ const SETTINGS_CATEGORIES = [
         key: "session",
         title: "会话",
         icon: "session"
+    },
+    {
+        key: "about",
+        title: "关于",
+        icon: "about"
     }
 ];
 
 export function renderCurrentPage(route) {
     switch (route) {
-        case "dashboard":
-            return renderDashboardPage();
         case "history":
             return renderHistoryPage();
         case "devices":
@@ -46,7 +54,7 @@ export function renderCurrentPage(route) {
         case "ai":
             return renderPlaceholderPage("AI 工具");
         default:
-            return renderDashboardPage();
+            return renderHistoryPage();
     }
 }
 
@@ -251,62 +259,6 @@ function resolvePublicSharePreviewURL(file, share) {
 
 function isPreviewablePublicShareFile(file) {
     return Boolean(file?.is_image || file?.is_video);
-}
-
-function renderDashboardPage() {
-    const user = state.profile?.user || state.session?.user || {};
-    const currentDevice = state.session?.device || {};
-    const visibleNavItems = getVisibleNavItems();
-
-    return `
-        <section class="card-grid">
-            <article class="card">
-                <div class="card-header">
-                    <div>
-                        <h3>当前账号</h3>
-                    </div>
-                    <span class="badge badge-primary">已登录</span>
-                </div>
-
-                <div class="data-list">
-                    ${renderDataRow("用户 ID", user.id, true)}
-                    ${renderDataRow("用户名", user.username)}
-                    ${renderDataRow("账号角色", user.is_admin ? "管理员" : "普通用户")}
-                    ${renderDataRow("存储配额", formatBytes(user.storage_quota_bytes))}
-                    ${renderDataRow("上传带宽", formatKbps(user.upload_bandwidth_kbps))}
-                    ${renderDataRow("下载带宽", formatKbps(user.download_bandwidth_kbps))}
-                    ${renderDataRow("创建时间", formatDateTime(user.created_at))}
-                    ${renderDataRow("更新时间", formatDateTime(user.updated_at))}
-                </div>
-            </article>
-
-            <article class="card">
-                <div class="card-header">
-                    <div>
-                        <h3>当前设备</h3>
-                    </div>
-                    <span class="badge badge-accent">当前设备</span>
-                </div>
-
-                <div class="data-list">
-                    ${renderDataRow("设备 ID", currentDevice.id, true)}
-                    ${renderDataRow("平台", currentDevice.platform || "web")}
-                    ${renderDataRow("设备名", currentDevice.device_name)}
-                    ${renderDataRow("最近在线", formatDateTime(currentDevice.last_seen_at))}
-                </div>
-            </article>
-        </section>
-
-        <section class="card">
-            <div class="card-header">
-                <h3>功能入口</h3>
-            </div>
-
-            <div class="module-grid">
-                ${visibleNavItems.filter((item) => item.route !== "dashboard").map((item) => renderModuleTile(item)).join("")}
-            </div>
-        </section>
-    `;
 }
 
 function renderRequestsPage() {
@@ -799,6 +751,17 @@ function renderClipboardItem(item) {
                         title="复制文本"
                     >
                         ${renderIcon("copy")}
+                    </button>
+                    <button
+                        type="button"
+                        class="icon-button"
+                        data-action="delete-clipboard-item"
+                        data-item-id="${escapeHTML(item.id)}"
+                        aria-label="删除历史记录"
+                        title="删除"
+                        ${isPending(`clipboard-delete:${item.id}`) ? "disabled" : ""}
+                    >
+                        ${renderIcon("trash")}
                     </button>
                 </div>
             </div>
@@ -2108,6 +2071,9 @@ function renderClipboardDetailPanel(itemID) {
                 <button type="button" class="button-primary" data-action="copy-clipboard-item" data-item-id="${escapeHTML(item.id)}">
                     复制文本
                 </button>
+                <button type="button" class="button-danger" data-action="delete-clipboard-item" data-item-id="${escapeHTML(item.id)}" ${isPending(`clipboard-delete:${item.id}`) ? "disabled" : ""}>
+                    ${isPending(`clipboard-delete:${item.id}`) ? "正在删除..." : "删除记录"}
+                </button>
             </div>
         </aside>
     `;
@@ -2267,10 +2233,14 @@ function renderSettingsCategoryContent(categoryKey) {
     switch (categoryKey) {
         case "shares":
             return renderShareSettings();
+        case "history":
+            return renderHistorySettings();
         case "security":
             return renderSecuritySettings();
         case "session":
             return renderSessionSettings();
+        case "about":
+            return renderAboutSettings();
         case "general":
         default:
             return renderGeneralSettings();
@@ -2287,6 +2257,92 @@ function renderGeneralSettings() {
                 ${renderSettingsCompactRow("用户名", user.username)}
                 ${renderSettingsCompactRow("当前设备", currentDevice.device_name)}
                 ${renderSettingsCompactRow("平台", currentDevice.platform || "web")}
+            </div>
+        </section>
+    `;
+}
+
+function renderHistorySettings() {
+    const retentionDays = Number(state.clipboard.retentionDays || 0);
+    const maxStoredItems = Number(state.clipboard.maxStoredItems || 1000);
+    const retentionText = retentionDays <= 0 ? "全部时间段" : `${retentionDays} 天`;
+
+    return `
+        <section class="settings-pane-section">
+            <div class="settings-section-label">历史保留</div>
+            <p class="settings-inline-note">保留时间为 0 表示不过期；最大记录数只保留最新的可见历史。</p>
+
+            <form id="history-settings-form" class="settings-password-form">
+                <div class="field">
+                    <label for="history-retention-days">保留天数</label>
+                    <input
+                        id="history-retention-days"
+                        name="retention_days"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value="${escapeAttribute(retentionDays)}"
+                        required
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="history-limit">最大记录数</label>
+                    <input
+                        id="history-limit"
+                        name="history_limit"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value="${escapeAttribute(maxStoredItems)}"
+                        required
+                    >
+                </div>
+
+                <div class="settings-submit-row">
+                    <button type="submit" class="button-primary" ${isPending("history-settings") ? "disabled" : ""}>
+                        ${isPending("history-settings") ? "正在保存..." : "保存历史设置"}
+                    </button>
+                </div>
+            </form>
+
+            <div class="settings-compact-list">
+                ${renderSettingsCompactRow("当前保留时间", retentionText)}
+                ${renderSettingsCompactRow("当前最大记录数", String(maxStoredItems))}
+                ${renderSettingsCompactRow("最近更新", state.clipboard.settingsUpdatedAt ? formatDateTime(state.clipboard.settingsUpdatedAt) : "-")}
+            </div>
+        </section>
+
+        <section class="settings-pane-section">
+            <div class="settings-section-label">批量清理</div>
+            <div class="settings-action-row">
+                <div class="settings-action-copy">
+                    <strong>删除 N 天前记录</strong>
+                    <span>只清理当前账号的文本历史，文件和分享不会受影响。</span>
+                </div>
+                <div class="settings-inline-controls">
+                    <input
+                        id="history-cleanup-days"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value="${escapeAttribute(state.clipboard.cleanupDaysDraft || "30")}"
+                        aria-label="清理天数"
+                    >
+                    <button type="button" class="button-secondary" data-action="cleanup-clipboard-history" ${isPending("history-cleanup") ? "disabled" : ""}>
+                        ${isPending("history-cleanup") ? "正在清理..." : "清理"}
+                    </button>
+                </div>
+            </div>
+
+            <div class="settings-action-row">
+                <div class="settings-action-copy">
+                    <strong>清空全部文本历史</strong>
+                    <span>只清空当前账号可见的文本历史，操作会软删除记录。</span>
+                </div>
+                <button type="button" class="button-danger" data-action="clear-clipboard-history" ${isPending("history-clear") ? "disabled" : ""}>
+                    ${isPending("history-clear") ? "正在清空..." : "清空历史"}
+                </button>
             </div>
         </section>
     `;
@@ -2461,6 +2517,28 @@ function renderSessionSettings() {
                 <button type="button" class="button-danger" data-action="logout" ${isPending("logout") ? "disabled" : ""}>
                     ${isPending("logout") ? "正在退出..." : "退出登录"}
                 </button>
+            </div>
+        </section>
+    `;
+}
+
+function renderAboutSettings() {
+    return `
+        <section class="settings-pane-section">
+            <div class="settings-compact-list">
+                <div class="settings-action-row">
+                    <div class="settings-action-copy">
+                        <strong>GitHub 仓库</strong>
+                        <span class="settings-compact-value is-mono">https://github.com/shuangboxu/ClipBridge</span>
+                    </div>
+
+                    <button type="button" class="button-secondary" data-action="open-project-link">
+                        打开
+                    </button>
+                </div>
+
+                ${renderSettingsCompactRow("Windows 下载", "即将开放")}
+                ${renderSettingsCompactRow("Android 下载", "即将开放")}
             </div>
         </section>
     `;

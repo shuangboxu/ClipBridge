@@ -29,6 +29,7 @@ data class HistoryUiState(
     val isLoading: Boolean = false,
     val isUploading: Boolean = false,
     val isPulling: Boolean = false,
+    val deletingItemId: String? = null,
     val errorMessage: String? = null,
 )
 
@@ -259,7 +260,7 @@ class HistoryViewModel(
 
                 // pull 返回的是“按 seq 升序的新数据”，
                 // 本轮先在拿到 next_since_seq 后立即 ACK，再刷新第一页，避免客户端本地进度和服务端脱节。
-                if (pullResult.items.isNotEmpty() && pullResult.nextSinceSeq != null) {
+                if (pullResult.nextSinceSeq != null && pullResult.nextSinceSeq > sinceSeq) {
                     clipboardSyncCoordinator.ackSync(session, pullResult.nextSinceSeq)
                 }
 
@@ -277,6 +278,49 @@ class HistoryViewModel(
                 _uiState.update {
                     it.copy(
                         isPulling = false,
+                        errorMessage = error.message ?: "网络异常，请稍后重试",
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteHistoryItem(itemId: String) {
+        val currentSession = requireSession() ?: return
+        val normalizedItemId = itemId.trim()
+        if (normalizedItemId.isBlank() || _uiState.value.deletingItemId != null) {
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    deletingItemId = normalizedItemId,
+                    errorMessage = null,
+                )
+            }
+
+            try {
+                val result = clipboardSyncCoordinator.deleteHistoryItem(
+                    session = currentSession,
+                    itemId = normalizedItemId,
+                )
+
+                refreshAfterMutation()
+                _uiState.update { it.copy(deletingItemId = null) }
+                _toastEvents.emit(
+                    if (result.deletedCount > 0) {
+                        "历史记录已删除"
+                    } else {
+                        "这条记录已不存在"
+                    },
+                )
+            } catch (error: AuthApiException) {
+                handleRequestError(error)
+            } catch (error: IOException) {
+                _uiState.update {
+                    it.copy(
+                        deletingItemId = null,
                         errorMessage = error.message ?: "网络异常，请稍后重试",
                     )
                 }
@@ -357,6 +401,7 @@ class HistoryViewModel(
                 isLoading = false,
                 isUploading = false,
                 isPulling = false,
+                deletingItemId = null,
                 errorMessage = null,
             )
         }
@@ -441,6 +486,7 @@ class HistoryViewModel(
                 isLoading = false,
                 isUploading = false,
                 isPulling = false,
+                deletingItemId = null,
                 errorMessage = error.message ?: "服务暂时不可用，请稍后重试",
             )
         }

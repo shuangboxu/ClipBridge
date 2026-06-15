@@ -2,7 +2,10 @@ package com.xushuangbo.clipbridge.core.sync
 
 import com.xushuangbo.clipbridge.core.network.AuthApiException
 import com.xushuangbo.clipbridge.core.network.ClipboardApiClient
+import com.xushuangbo.clipbridge.core.network.ClipboardHistoryCleanupResult
+import com.xushuangbo.clipbridge.core.network.ClipboardHistoryDeleteResult
 import com.xushuangbo.clipbridge.core.network.ClipboardHistoryResult
+import com.xushuangbo.clipbridge.core.network.ClipboardHistorySettingsResult
 import com.xushuangbo.clipbridge.core.network.ClipboardUploadResult
 import com.xushuangbo.clipbridge.core.network.SyncPullResult
 import com.xushuangbo.clipbridge.core.network.TokenBundle
@@ -72,6 +75,78 @@ class ClipboardSyncCoordinator(
         return result
     }
 
+    suspend fun deleteHistoryItem(
+        session: StoredSession,
+        itemId: String,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryDeleteResult {
+        val result = clipboardApiClient.deleteClipboardItem(
+            session = session,
+            itemId = itemId,
+            onRefreshing = onRefreshing,
+        )
+        applyRotatedTokens(session, result.tokens)
+        advanceClipboardAck(result.latestSeq, result.currentDeviceAckSeq)
+        return result
+    }
+
+    suspend fun clearHistory(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryCleanupResult {
+        val result = clipboardApiClient.clearClipboardHistory(
+            session = session,
+            onRefreshing = onRefreshing,
+        )
+        applyRotatedTokens(session, result.tokens)
+        advanceClipboardAck(result.latestSeq, result.currentDeviceAckSeq)
+        return result
+    }
+
+    suspend fun cleanupHistoryOlderThan(
+        session: StoredSession,
+        days: Int,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryCleanupResult {
+        val result = clipboardApiClient.cleanupClipboardHistory(
+            session = session,
+            days = days,
+            onRefreshing = onRefreshing,
+        )
+        applyRotatedTokens(session, result.tokens)
+        advanceClipboardAck(result.latestSeq, result.currentDeviceAckSeq)
+        return result
+    }
+
+    suspend fun getHistorySettings(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistorySettingsResult {
+        val result = clipboardApiClient.getHistorySettings(
+            session = session,
+            onRefreshing = onRefreshing,
+        )
+        applyRotatedTokens(session, result.tokens)
+        return result
+    }
+
+    suspend fun updateHistorySettings(
+        session: StoredSession,
+        retentionDays: Int,
+        historyLimit: Int,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryCleanupResult {
+        val result = clipboardApiClient.updateHistorySettings(
+            session = session,
+            retentionDays = retentionDays,
+            historyLimit = historyLimit,
+            onRefreshing = onRefreshing,
+        )
+        applyRotatedTokens(session, result.tokens)
+        advanceClipboardAck(result.latestSeq, result.currentDeviceAckSeq)
+        return result
+    }
+
     suspend fun ackSync(
         session: StoredSession,
         seq: Long,
@@ -117,5 +192,19 @@ class ClipboardSyncCoordinator(
             accessToken = tokens.accessToken,
             refreshToken = tokens.refreshToken,
         )
+    }
+
+    private fun advanceClipboardAck(
+        latestSeq: Long,
+        currentDeviceAckSeq: Long,
+    ) {
+        val nextAckSeq = maxOf(latestSeq, currentDeviceAckSeq)
+        if (nextAckSeq <= 0L) {
+            return
+        }
+
+        // 历史删除 / 清理后，旧 seq 可能已经不可见。
+        // 这里把本地游标推进到当前可接受的最高位置，避免客户端继续补拉已经被清理掉的数据。
+        sessionStore.saveLastAckSeq(maxOf(sessionStore.readLastAckSeq(), nextAckSeq))
     }
 }

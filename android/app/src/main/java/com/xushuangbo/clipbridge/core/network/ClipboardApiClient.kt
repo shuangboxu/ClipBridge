@@ -32,6 +32,32 @@ data class ClipboardHistoryResult(
     val tokens: TokenBundle? = null,
 )
 
+data class ClipboardHistorySettings(
+    val retentionDays: Int,
+    val historyLimit: Int,
+    val updatedAt: String,
+)
+
+data class ClipboardHistoryCleanupResult(
+    val deletedCount: Int,
+    val settings: ClipboardHistorySettings,
+    val latestSeq: Long,
+    val currentDeviceAckSeq: Long,
+    val tokens: TokenBundle? = null,
+)
+
+data class ClipboardHistorySettingsResult(
+    val settings: ClipboardHistorySettings,
+    val tokens: TokenBundle? = null,
+)
+
+data class ClipboardHistoryDeleteResult(
+    val deletedCount: Int,
+    val latestSeq: Long,
+    val currentDeviceAckSeq: Long,
+    val tokens: TokenBundle? = null,
+)
+
 data class ClipboardUploadResult(
     val item: ClipboardItem,
     val deduplicated: Boolean,
@@ -70,6 +96,35 @@ interface ClipboardApiClient {
         seq: Long,
         onRefreshing: (() -> Unit)? = null,
     ): TokenBundle?
+
+    suspend fun deleteClipboardItem(
+        session: StoredSession,
+        itemId: String,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryDeleteResult
+
+    suspend fun clearClipboardHistory(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryCleanupResult
+
+    suspend fun cleanupClipboardHistory(
+        session: StoredSession,
+        days: Int,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryCleanupResult
+
+    suspend fun getHistorySettings(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistorySettingsResult
+
+    suspend fun updateHistorySettings(
+        session: StoredSession,
+        retentionDays: Int,
+        historyLimit: Int,
+        onRefreshing: (() -> Unit)? = null,
+    ): ClipboardHistoryCleanupResult
 }
 
 class HttpClipboardApiClient(
@@ -174,6 +229,89 @@ class HttpClipboardApiClient(
         response.tokens
     }
 
+    override suspend fun deleteClipboardItem(
+        session: StoredSession,
+        itemId: String,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryDeleteResult = withContext(Dispatchers.IO) {
+        val response = requestAuthenticatedData(
+            session = session,
+            method = "DELETE",
+            path = "/v1/clipboard/items/${itemId.urlEncodePathSegment()}",
+            onRefreshing = onRefreshing,
+        )
+        ClipboardHistoryDeleteResult(
+            deletedCount = response.data.optInt("deleted_count", 0),
+            latestSeq = response.data.optLong("latest_seq", 0L),
+            currentDeviceAckSeq = response.data.optLong("current_device_ack_seq", 0L),
+            tokens = response.tokens,
+        )
+    }
+
+    override suspend fun clearClipboardHistory(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryCleanupResult = withContext(Dispatchers.IO) {
+        val response = requestAuthenticatedData(
+            session = session,
+            method = "POST",
+            path = "/v1/clipboard/history/clear",
+            onRefreshing = onRefreshing,
+        )
+        parseCleanupResult(response)
+    }
+
+    override suspend fun cleanupClipboardHistory(
+        session: StoredSession,
+        days: Int,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryCleanupResult = withContext(Dispatchers.IO) {
+        val requestBody = JSONObject().put("days", days)
+        val response = requestAuthenticatedData(
+            session = session,
+            method = "POST",
+            path = "/v1/clipboard/history/cleanup",
+            jsonBody = requestBody,
+            onRefreshing = onRefreshing,
+        )
+        parseCleanupResult(response)
+    }
+
+    override suspend fun getHistorySettings(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistorySettingsResult = withContext(Dispatchers.IO) {
+        val response = requestAuthenticatedData(
+            session = session,
+            method = "GET",
+            path = "/v1/clipboard/history/settings",
+            onRefreshing = onRefreshing,
+        )
+        ClipboardHistorySettingsResult(
+            settings = parseHistorySettings(response.data.optJSONObject("settings")),
+            tokens = response.tokens,
+        )
+    }
+
+    override suspend fun updateHistorySettings(
+        session: StoredSession,
+        retentionDays: Int,
+        historyLimit: Int,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryCleanupResult = withContext(Dispatchers.IO) {
+        val requestBody = JSONObject()
+            .put("retention_days", retentionDays)
+            .put("history_limit", historyLimit)
+        val response = requestAuthenticatedData(
+            session = session,
+            method = "PUT",
+            path = "/v1/clipboard/history/settings",
+            jsonBody = requestBody,
+            onRefreshing = onRefreshing,
+        )
+        parseCleanupResult(response)
+    }
+
     private suspend fun requestAuthenticatedData(
         session: StoredSession,
         method: String,
@@ -238,6 +376,24 @@ class HttpClipboardApiClient(
         )
     }
 
+    private fun parseCleanupResult(response: AuthenticatedResponse): ClipboardHistoryCleanupResult {
+        return ClipboardHistoryCleanupResult(
+            deletedCount = response.data.optInt("deleted_count", 0),
+            settings = parseHistorySettings(response.data.optJSONObject("settings")),
+            latestSeq = response.data.optLong("latest_seq", 0L),
+            currentDeviceAckSeq = response.data.optLong("current_device_ack_seq", 0L),
+            tokens = response.tokens,
+        )
+    }
+
+    private fun parseHistorySettings(settingsData: JSONObject?): ClipboardHistorySettings {
+        return ClipboardHistorySettings(
+            retentionDays = settingsData?.optInt("retention_days", 0) ?: 0,
+            historyLimit = settingsData?.optInt("history_limit", 1000) ?: 1000,
+            updatedAt = settingsData?.optString("updated_at").orEmpty(),
+        )
+    }
+
     private fun requestData(
         baseUrl: String,
         method: String,
@@ -258,6 +414,8 @@ class HttpClipboardApiClient(
         when (method) {
             "GET" -> requestBuilder.get()
             "POST" -> requestBuilder.post((jsonBody?.toString() ?: "{}").toRequestBody(jsonMediaType))
+            "PUT" -> requestBuilder.put((jsonBody?.toString() ?: "{}").toRequestBody(jsonMediaType))
+            "DELETE" -> requestBuilder.delete((jsonBody?.toString() ?: "").toRequestBody(jsonMediaType))
             else -> error("Unsupported method: $method")
         }
 
@@ -319,6 +477,10 @@ class HttpClipboardApiClient(
             return null
         }
         return optLong(name)
+    }
+
+    private fun String.urlEncodePathSegment(): String {
+        return java.net.URLEncoder.encode(this, Charsets.UTF_8.name())
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 package com.xushuangbo.clipbridge.feature.shell
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +23,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -36,6 +39,9 @@ internal fun SettingsScreen(
     onRefreshSessionSnapshot: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
     LaunchedEffect(Unit) {
         onRefreshSessionSnapshot()
     }
@@ -46,10 +52,10 @@ internal fun SettingsScreen(
         SettingEntry("设备", DetailPage.Device),
         SettingEntry("申请", DetailPage.Requests),
     )
+    // 文件页和分享页已经能从主页进入，设置页只保留需要配置的分享规则入口。
     val commonEntries = listOf(
-        SettingEntry("文件", DetailPage.Files),
-        SettingEntry("分享", DetailPage.Share),
         SettingEntry("分享规则", DetailPage.ShareRules),
+        SettingEntry("历史设置", DetailPage.HistorySettings),
     )
     val managementEntries = if (uiState.isAdmin) {
         listOf(
@@ -76,6 +82,15 @@ internal fun SettingsScreen(
             SettingsSection(title = "管理", entries = managementEntries, onEntryClick = { entry -> onOpenDetailPage(entry.detailPage) })
             Spacer(modifier = Modifier.height(22.dp))
         }
+        AboutSection(
+            onOpenGithub = {
+                runCatching { uriHandler.openUri("https://github.com/shuangboxu/ClipBridge") }
+                    .onFailure {
+                        Toast.makeText(context, "无法打开 GitHub 仓库", Toast.LENGTH_SHORT).show()
+                    }
+            },
+        )
+        Spacer(modifier = Modifier.height(22.dp))
         Spacer(modifier = Modifier.height(6.dp))
         Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
             Icon(imageVector = Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
@@ -211,6 +226,40 @@ internal fun SecurityScreen(
 }
 
 @Composable
+private fun AboutSection(
+    onOpenGithub: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "关于",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+        )
+
+        Surface(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                AboutRow(
+                    title = "GitHub 仓库",
+                    value = "github.com/shuangboxu/ClipBridge",
+                    onClick = onOpenGithub,
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+                AboutRow(title = "Windows 下载", value = "即将开放")
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+                AboutRow(title = "Android 下载", value = "即将开放")
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsSection(
     title: String,
     entries: List<SettingEntry>,
@@ -237,6 +286,40 @@ private fun SettingsSection(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AboutRow(
+    title: String,
+    value: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

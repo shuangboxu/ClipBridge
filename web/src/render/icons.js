@@ -77,6 +77,13 @@ export function renderIcon(name) {
                 <path d="M8.5 10.5h7"></path>
             </svg>
         `,
+        about: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 10v6"></path>
+                <circle cx="12" cy="7.5" r="1"></circle>
+            </svg>
+        `,
         "sidebar-open": `
             <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="3" y="4" width="18" height="16" rx="2"></rect>

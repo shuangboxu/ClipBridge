@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
@@ -149,6 +150,7 @@ fun HistoryScreenRoute(
         onSearchQueryChange = onSearchQueryChange,
         onDraftTextChange = viewModel::updateDraftText,
         onUploadClick = viewModel::uploadDraftText,
+        onDeleteItem = viewModel::deleteHistoryItem,
         uploadDialogVisible = uploadDialogVisible,
         onUploadDialogDismiss = onUploadDialogDismiss,
         onShowLatestUpdates = { viewModel.showLatestHistory(scrollToTop = true) },
@@ -167,6 +169,7 @@ fun HistoryScreen(
     onSearchQueryChange: (String) -> Unit,
     onDraftTextChange: (String) -> Unit,
     onUploadClick: () -> Unit,
+    onDeleteItem: (String) -> Unit,
     uploadDialogVisible: Boolean,
     onUploadDialogDismiss: () -> Unit,
     onShowLatestUpdates: () -> Unit,
@@ -178,6 +181,7 @@ fun HistoryScreen(
         searchQuery.isBlank() || item.textContent.contains(searchQuery, ignoreCase = true)
     }
     var selectedItem by remember { mutableStateOf<ClipboardItem?>(null) }
+    var pendingDeleteItem by remember { mutableStateOf<ClipboardItem?>(null) }
 
     Column(
         modifier = Modifier
@@ -221,8 +225,10 @@ fun HistoryScreen(
                     ) { item ->
                         HistoryItemCard(
                             item = item,
+                            isDeleting = uiState.deletingItemId == item.id,
                             onCopy = { copyTextToClipboard(item.textContent, context) },
                             onClick = { selectedItem = item },
+                            onDelete = { pendingDeleteItem = item },
                         )
                     }
                 }
@@ -303,6 +309,42 @@ fun HistoryScreen(
             },
         )
     }
+
+    pendingDeleteItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = {
+                if (uiState.deletingItemId == null) {
+                    pendingDeleteItem = null
+                }
+            },
+            title = { Text("删除历史记录") },
+            text = {
+                Text(
+                    text = "删除后，这条文本历史不会再出现在各端历史列表里。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteItem(item.id)
+                        pendingDeleteItem = null
+                    },
+                    enabled = uiState.deletingItemId == null,
+                ) {
+                    Text(if (uiState.deletingItemId == item.id) "删除中..." else "确认删除")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { pendingDeleteItem = null },
+                    enabled = uiState.deletingItemId == null,
+                ) {
+                    Text("取消")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -348,9 +390,9 @@ private fun PendingLatestHistoryBanner(
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = if (isViewingLatestPage) {
-                    "有新的历史记录，点击立即刷新"
+                    "历史记录已更新，点击立即刷新"
                 } else {
-                    "有新的历史记录，点击回到最新"
+                    "历史记录已更新，点击回到最新"
                 },
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.weight(1f),
@@ -400,8 +442,10 @@ private fun EmptyHistoryState() {
 @Composable
 private fun HistoryItemCard(
     item: ClipboardItem,
+    isDeleting: Boolean,
     onCopy: () -> Unit,
     onClick: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Card(
         onClick = onClick,
@@ -415,12 +459,35 @@ private fun HistoryItemCard(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         text = "Seq ${item.seq}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        IconButton(
+                            onClick = onDelete,
+                            enabled = !isDeleting,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = if (isDeleting) "删除中" else "删除",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        IconButton(
+                            onClick = onCopy,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ContentCopy,
+                                contentDescription = "复制",
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -434,16 +501,6 @@ private fun HistoryItemCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider()
-            }
-
-            IconButton(
-                onClick = onCopy,
-                modifier = Modifier.align(Alignment.TopEnd),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ContentCopy,
-                    contentDescription = "复制",
-                )
             }
         }
     }

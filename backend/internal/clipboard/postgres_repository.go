@@ -119,7 +119,7 @@ func (r *PostgresRepository) ListHistory(ctx context.Context, userID string, opt
 		rows, err = r.db.Query(ctx, `
 			SELECT id, user_id, seq, content_type, COALESCE(text_content, ''), content_hash, origin_device_id, created_at
 			FROM clipboard_items
-			WHERE user_id = $1 AND seq < $2
+			WHERE user_id = $1 AND seq < $2 AND deleted_at IS NULL
 			ORDER BY seq DESC
 			LIMIT $3
 		`, userID, *options.BeforeSeq, limitPlusOne)
@@ -127,7 +127,7 @@ func (r *PostgresRepository) ListHistory(ctx context.Context, userID string, opt
 		rows, err = r.db.Query(ctx, `
 			SELECT id, user_id, seq, content_type, COALESCE(text_content, ''), content_hash, origin_device_id, created_at
 			FROM clipboard_items
-			WHERE user_id = $1
+			WHERE user_id = $1 AND deleted_at IS NULL
 			ORDER BY seq DESC
 			LIMIT $2
 		`, userID, limitPlusOne)
@@ -153,7 +153,7 @@ func (r *PostgresRepository) PullItems(ctx context.Context, userID string, since
 	rows, err := r.db.Query(ctx, `
 		SELECT id, user_id, seq, content_type, COALESCE(text_content, ''), content_hash, origin_device_id, created_at
 		FROM clipboard_items
-		WHERE user_id = $1 AND seq > $2
+		WHERE user_id = $1 AND seq > $2 AND deleted_at IS NULL
 		ORDER BY seq ASC
 		LIMIT $3
 	`, userID, sinceSeq, limit+1)
@@ -210,6 +210,115 @@ func (r *PostgresRepository) GetSyncSnapshot(ctx context.Context, userID, device
 	return snapshot, nil
 }
 
+func (r *PostgresRepository) DeleteHistoryItem(ctx context.Context, userID, itemID string) (Item, bool, error) {
+	var item Item
+	err := r.db.QueryRow(ctx, `
+		UPDATE clipboard_items
+		SET deleted_at = now()
+		WHERE user_id = $1 AND id = $2 AND deleted_at IS NULL
+		RETURNING id, user_id, seq, content_type, COALESCE(text_content, ''), content_hash, origin_device_id, created_at
+	`, userID, itemID).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.Seq,
+		&item.ContentType,
+		&item.TextContent,
+		&item.ContentHash,
+		&item.OriginDeviceID,
+		&item.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Item{}, false, nil
+	}
+	if err != nil {
+		return Item{}, false, fmt.Errorf("delete clipboard history item failed: %w", err)
+	}
+	return item, true, nil
+}
+
+func (r *PostgresRepository) ClearHistory(ctx context.Context, userID string) (int, error) {
+	commandTag, err := r.db.Exec(ctx, `
+		UPDATE clipboard_items
+		SET deleted_at = now()
+		WHERE user_id = $1 AND deleted_at IS NULL
+	`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("clear clipboard history failed: %w", err)
+	}
+	return int(commandTag.RowsAffected()), nil
+}
+
+func (r *PostgresRepository) CleanupHistoryOlderThan(ctx context.Context, userID string, days int) (int, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+
+	commandTag, err := r.db.Exec(ctx, `
+		UPDATE clipboard_items
+		SET deleted_at = now()
+		WHERE user_id = $1
+			AND deleted_at IS NULL
+			AND created_at < now() - ($2::int * interval '1 day')
+	`, userID, days)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup old clipboard history failed: %w", err)
+	}
+	return int(commandTag.RowsAffected()), nil
+}
+
+func (r *PostgresRepository) ApplyHistoryLimit(ctx context.Context, userID string, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+
+	commandTag, err := r.db.Exec(ctx, `
+		WITH active_items AS (
+			SELECT id
+			FROM clipboard_items
+			WHERE user_id = $1 AND deleted_at IS NULL
+			ORDER BY seq DESC
+			OFFSET $2
+		)
+		UPDATE clipboard_items
+		SET deleted_at = now()
+		WHERE id IN (SELECT id FROM active_items)
+	`, userID, limit)
+	if err != nil {
+		return 0, fmt.Errorf("apply clipboard history limit failed: %w", err)
+	}
+	return int(commandTag.RowsAffected()), nil
+}
+
+func (r *PostgresRepository) GetHistorySettings(ctx context.Context, userID string) (HistorySettings, error) {
+	return r.ensureHistorySettings(ctx, userID)
+}
+
+func (r *PostgresRepository) UpdateHistorySettings(ctx context.Context, userID string, input HistorySettingsInput) (HistorySettings, error) {
+	var settings HistorySettings
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO clipboard_history_settings(user_id, retention_days, history_limit, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (user_id)
+		DO UPDATE SET
+			retention_days = EXCLUDED.retention_days,
+			history_limit = EXCLUDED.history_limit,
+			updated_at = now()
+		RETURNING user_id, retention_days, history_limit, updated_at
+	`, userID, input.RetentionDays, input.HistoryLimit).Scan(
+		&settings.UserID,
+		&settings.RetentionDays,
+		&settings.HistoryLimit,
+		&settings.UpdatedAt,
+	)
+	if err != nil {
+		if isForeignKeyViolation(err) {
+			return HistorySettings{}, ErrNotFound
+		}
+		return HistorySettings{}, fmt.Errorf("update clipboard history settings failed: %w", err)
+	}
+	return settings, nil
+}
+
 func (r *PostgresRepository) lockUserSyncCounter(ctx context.Context, tx pgx.Tx, userID string) (int64, error) {
 	var currentSeq int64
 	err := tx.QueryRow(ctx, `
@@ -256,7 +365,7 @@ func (r *PostgresRepository) getLatestUserItem(ctx context.Context, tx pgx.Tx, u
 	err := tx.QueryRow(ctx, `
 		SELECT id, user_id, seq, content_type, COALESCE(text_content, ''), content_hash, origin_device_id, created_at
 		FROM clipboard_items
-		WHERE user_id = $1
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY seq DESC
 		LIMIT 1
 	`, userID).Scan(
@@ -276,6 +385,48 @@ func (r *PostgresRepository) getLatestUserItem(ctx context.Context, tx pgx.Tx, u
 		return Item{}, false, fmt.Errorf("get latest clipboard item failed: %w", err)
 	}
 	return item, true, nil
+}
+
+func (r *PostgresRepository) ensureHistorySettings(ctx context.Context, userID string) (HistorySettings, error) {
+	var settings HistorySettings
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO clipboard_history_settings(user_id, retention_days, history_limit, updated_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (user_id) DO NOTHING
+		RETURNING user_id, retention_days, history_limit, updated_at
+	`, userID, defaultRetentionDays, defaultStoredHistoryLimit).Scan(
+		&settings.UserID,
+		&settings.RetentionDays,
+		&settings.HistoryLimit,
+		&settings.UpdatedAt,
+	)
+	if err == nil {
+		return settings, nil
+	}
+	if isForeignKeyViolation(err) {
+		return HistorySettings{}, ErrNotFound
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return HistorySettings{}, fmt.Errorf("ensure clipboard history settings failed: %w", err)
+	}
+
+	err = r.db.QueryRow(ctx, `
+		SELECT user_id, retention_days, history_limit, updated_at
+		FROM clipboard_history_settings
+		WHERE user_id = $1
+	`, userID).Scan(
+		&settings.UserID,
+		&settings.RetentionDays,
+		&settings.HistoryLimit,
+		&settings.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return HistorySettings{}, ErrNotFound
+	}
+	if err != nil {
+		return HistorySettings{}, fmt.Errorf("get clipboard history settings failed: %w", err)
+	}
+	return settings, nil
 }
 
 func shouldDeduplicateLatestItem(found bool, latestItem Item, nextContentHash string) bool {

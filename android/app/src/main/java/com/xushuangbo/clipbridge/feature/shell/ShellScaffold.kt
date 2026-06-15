@@ -5,15 +5,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xushuangbo.clipbridge.app.AppTestTags
 
 internal data class HomeShortcut(
@@ -70,6 +69,7 @@ internal enum class DetailPage(val title: String) {
     Scan("扫一扫"),
     Share("分享"),
     ShareRules("分享规则"),
+    HistorySettings("历史设置"),
     AccountInfo("账号信息"),
     Security("安全"),
     Device("设备"),
@@ -85,6 +85,7 @@ internal fun ShellScaffold(
     settingsUiState: SettingsUiState,
     deviceUiState: DeviceUiState,
     historyViewModel: HistoryViewModel,
+    historySettingsViewModel: HistorySettingsViewModel,
     filesViewModel: FilesViewModel,
     sharesViewModel: SharesViewModel,
     requestsViewModel: RequestsViewModel,
@@ -116,7 +117,9 @@ internal fun ShellScaffold(
     var historySearchQuery by rememberSaveable { mutableStateOf("") }
     var historyUploadDialogVisible by rememberSaveable { mutableStateOf(false) }
     var filesUploadRequestVersion by rememberSaveable { mutableStateOf(0) }
+    var shareCreateDialogVisible by rememberSaveable { mutableStateOf(false) }
     var pendingHistoryShortcutAction by remember { mutableStateOf<HistoryShortcutAction?>(null) }
+    val sharesUiState by sharesViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // 主页面的快捷入口只负责把用户送到正确页面，具体业务仍然由对应页面处理。
@@ -225,6 +228,18 @@ internal fun ShellScaffold(
                                 contentDescription = "刷新文件列表",
                             )
                         }
+                    } else if (currentDetailPage == DetailPage.Share) {
+                        IconButton(
+                            // 分享页正文只展示记录，右上角按钮负责打开创建弹窗。
+                            onClick = { shareCreateDialogVisible = true },
+                            enabled = !sharesUiState.isCreating,
+                            modifier = Modifier.testTag(AppTestTags.ShareCreateButton),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Share,
+                                contentDescription = "创建分享",
+                            )
+                        }
                     } else if (currentDetailPage == DetailPage.Requests) {
                         IconButton(onClick = { requestsViewModel.refresh() }) {
                             Icon(
@@ -283,11 +298,17 @@ internal fun ShellScaffold(
             DetailPage.Share -> ShareScreenRoute(
                 innerPadding = innerPadding,
                 viewModel = sharesViewModel,
-                onOpenShareRules = { openDetailPage(DetailPage.ShareRules) },
+                createDialogVisible = shareCreateDialogVisible,
+                onCreateDialogDismiss = { shareCreateDialogVisible = false },
             )
             DetailPage.ShareRules -> ShareRulesScreenRoute(
                 innerPadding = innerPadding,
                 viewModel = sharesViewModel,
+            )
+            DetailPage.HistorySettings -> HistorySettingsScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = historySettingsViewModel,
+                onRequireAuth = onRequireAuth,
             )
             DetailPage.AccountInfo -> AccountInfoScreen(
                 innerPadding = innerPadding,

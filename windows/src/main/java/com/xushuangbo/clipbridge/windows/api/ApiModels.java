@@ -121,6 +121,30 @@ public final class ApiModels {
     ) {
     }
 
+    public record ClipboardHistorySettings(
+        int retentionDays,
+        int historyLimit,
+        String updatedAt
+    ) {
+    }
+
+    public record ClipboardHistoryCleanupResult(
+        int deletedCount,
+        ClipboardHistorySettings settings,
+        long latestSeq,
+        long currentDeviceAckSeq
+    ) {
+    }
+
+    public record ClipboardHistoryDeleteResult(
+        ClipboardItem item,
+        boolean deleted,
+        int deletedCount,
+        long latestSeq,
+        long currentDeviceAckSeq
+    ) {
+    }
+
     public record ClipboardUploadResult(
         ClipboardItem item,
         boolean deduplicated

@@ -23,6 +23,15 @@ type createClipboardItemRequest struct {
 	TextContent string `json:"text_content"`
 }
 
+type cleanupClipboardHistoryRequest struct {
+	Days int `json:"days"`
+}
+
+type updateClipboardHistorySettingsRequest struct {
+	RetentionDays int `json:"retention_days"`
+	HistoryLimit  int `json:"history_limit"`
+}
+
 type clipboardItemData struct {
 	ID                    string `json:"id"`
 	Seq                   int64  `json:"seq"`
@@ -32,6 +41,12 @@ type clipboardItemData struct {
 	OriginDeviceID        string `json:"origin_device_id"`
 	IsCurrentDeviceOrigin bool   `json:"is_current_device_origin"`
 	CreatedAt             string `json:"created_at"`
+}
+
+type clipboardHistorySettingsData struct {
+	RetentionDays int    `json:"retention_days"`
+	HistoryLimit  int    `json:"history_limit"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 func NewClipboardHandler(application *app.App) *ClipboardHandler {
@@ -129,17 +144,131 @@ func (h *ClipboardHandler) ListItems(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *ClipboardHandler) DeleteItem(w http.ResponseWriter, r *http.Request) {
+	identity, ok := authcontext.Get(r.Context())
+	if !ok {
+		response.Error(w, r, http.StatusInternalServerError, "auth identity is missing")
+		return
+	}
+
+	result, err := h.clipboardService.DeleteHistoryItem(
+		r.Context(),
+		identity.UserID,
+		identity.DeviceID,
+		r.PathValue("id"),
+	)
+	if err != nil {
+		h.writeClipboardError(w, r, err, "delete")
+		return
+	}
+
+	response.OK(w, r, map[string]any{
+		"item":                   buildClipboardItemData(result.Item, identity.DeviceID),
+		"deleted":                result.Deleted,
+		"deleted_count":          result.DeletedActiveCount,
+		"latest_seq":             result.LatestSeq,
+		"current_device_ack_seq": result.CurrentDeviceAckSeq,
+	})
+}
+
+func (h *ClipboardHandler) ClearHistory(w http.ResponseWriter, r *http.Request) {
+	identity, ok := authcontext.Get(r.Context())
+	if !ok {
+		response.Error(w, r, http.StatusInternalServerError, "auth identity is missing")
+		return
+	}
+
+	result, err := h.clipboardService.ClearHistory(r.Context(), identity.UserID, identity.DeviceID)
+	if err != nil {
+		h.writeClipboardError(w, r, err, "clear")
+		return
+	}
+	writeClipboardCleanupResponse(w, r, result)
+}
+
+func (h *ClipboardHandler) CleanupHistory(w http.ResponseWriter, r *http.Request) {
+	identity, ok := authcontext.Get(r.Context())
+	if !ok {
+		response.Error(w, r, http.StatusInternalServerError, "auth identity is missing")
+		return
+	}
+
+	var req cleanupClipboardHistoryRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		response.Error(w, r, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.clipboardService.CleanupHistoryOlderThan(r.Context(), identity.UserID, identity.DeviceID, req.Days)
+	if err != nil {
+		h.writeClipboardError(w, r, err, "cleanup")
+		return
+	}
+	writeClipboardCleanupResponse(w, r, result)
+}
+
+func (h *ClipboardHandler) GetHistorySettings(w http.ResponseWriter, r *http.Request) {
+	identity, ok := authcontext.Get(r.Context())
+	if !ok {
+		response.Error(w, r, http.StatusInternalServerError, "auth identity is missing")
+		return
+	}
+
+	settings, err := h.clipboardService.GetHistorySettings(r.Context(), identity.UserID, identity.DeviceID)
+	if err != nil {
+		h.writeClipboardError(w, r, err, "load history settings")
+		return
+	}
+
+	response.OK(w, r, map[string]any{
+		"settings": buildClipboardHistorySettingsData(settings),
+	})
+}
+
+func (h *ClipboardHandler) UpdateHistorySettings(w http.ResponseWriter, r *http.Request) {
+	identity, ok := authcontext.Get(r.Context())
+	if !ok {
+		response.Error(w, r, http.StatusInternalServerError, "auth identity is missing")
+		return
+	}
+
+	var req updateClipboardHistorySettingsRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		response.Error(w, r, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.clipboardService.UpdateHistorySettings(r.Context(), identity.UserID, identity.DeviceID, clipboard.HistorySettingsInput{
+		RetentionDays: req.RetentionDays,
+		HistoryLimit:  req.HistoryLimit,
+	})
+	if err != nil {
+		h.writeClipboardError(w, r, err, "update history settings")
+		return
+	}
+	writeClipboardCleanupResponse(w, r, result)
+}
+
 func (h *ClipboardHandler) writeClipboardError(w http.ResponseWriter, r *http.Request, err error, action string) {
 	switch {
 	case err == nil:
 		return
 	case errors.Is(err, clipboard.ErrNotFound):
-		response.Error(w, r, http.StatusNotFound, "device or user not found")
+		response.Error(w, r, http.StatusNotFound, "device, user, or clipboard record not found")
 	case isClipboardValidationError(err):
 		response.Error(w, r, http.StatusBadRequest, err.Error())
 	default:
 		response.Error(w, r, http.StatusInternalServerError, action+" clipboard item failed")
 	}
+}
+
+func writeClipboardCleanupResponse(w http.ResponseWriter, r *http.Request, result clipboard.HistoryCleanupResult) {
+	response.OK(w, r, map[string]any{
+		"deleted_count":          result.DeletedCount,
+		"settings":               buildClipboardHistorySettingsData(result.Settings),
+		"latest_seq":             result.LatestSeq,
+		"current_device_ack_seq": result.CurrentDeviceAckSeq,
+	})
 }
 
 func buildClipboardItemData(item clipboard.Item, currentDeviceID string) clipboardItemData {
@@ -152,6 +281,14 @@ func buildClipboardItemData(item clipboard.Item, currentDeviceID string) clipboa
 		OriginDeviceID:        item.OriginDeviceID,
 		IsCurrentDeviceOrigin: item.OriginDeviceID == currentDeviceID,
 		CreatedAt:             formatTime(item.CreatedAt),
+	}
+}
+
+func buildClipboardHistorySettingsData(settings clipboard.HistorySettings) clipboardHistorySettingsData {
+	return clipboardHistorySettingsData{
+		RetentionDays: settings.RetentionDays,
+		HistoryLimit:  settings.HistoryLimit,
+		UpdatedAt:     formatTime(settings.UpdatedAt),
 	}
 }
 
@@ -190,5 +327,6 @@ func isClipboardValidationError(err error) bool {
 	return strings.Contains(message, "is required") ||
 		strings.Contains(message, "must be at most") ||
 		strings.Contains(message, "must be greater than") ||
+		strings.Contains(message, "must be greater than or equal to") ||
 		strings.Contains(message, "only text clipboard items are supported")
 }

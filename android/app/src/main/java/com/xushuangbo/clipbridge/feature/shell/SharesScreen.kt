@@ -14,15 +14,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
@@ -30,10 +32,10 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -81,7 +83,8 @@ import android.content.Context
 fun ShareScreenRoute(
     innerPadding: PaddingValues,
     viewModel: SharesViewModel = viewModel(),
-    onOpenShareRules: () -> Unit,
+    createDialogVisible: Boolean,
+    onCreateDialogDismiss: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -99,6 +102,12 @@ fun ShareScreenRoute(
         viewModel.ensureLoaded()
     }
 
+    LaunchedEffect(uiState.createSuccessVersion) {
+        if (createDialogVisible && uiState.createSuccessVersion > 0) {
+            onCreateDialogDismiss()
+        }
+    }
+
     ShareScreen(
         innerPadding = innerPadding,
         uiState = uiState,
@@ -108,6 +117,8 @@ fun ShareScreenRoute(
         onChooseFile = { pickFileLauncher.launch(arrayOf("*/*")) },
         onClearSelectedFile = viewModel::clearSelectedFile,
         onCreateShare = viewModel::createShare,
+        createDialogVisible = createDialogVisible,
+        onCreateDialogDismiss = onCreateDialogDismiss,
         onStatusFilterSelected = viewModel::selectStatusFilter,
         onRefreshShares = viewModel::refreshShares,
         onPreviousPage = viewModel::loadPreviousPage,
@@ -129,7 +140,6 @@ fun ShareScreenRoute(
                     .onFailure { viewModel.showUiError("无法打开浏览器，请检查系统设置") }
             }
         },
-        onOpenShareRules = onOpenShareRules,
     )
 }
 
@@ -143,6 +153,8 @@ fun ShareScreen(
     onChooseFile: () -> Unit,
     onClearSelectedFile: () -> Unit,
     onCreateShare: () -> Unit,
+    createDialogVisible: Boolean,
+    onCreateDialogDismiss: () -> Unit,
     onStatusFilterSelected: (ShareStatusFilter) -> Unit,
     onRefreshShares: () -> Unit,
     onPreviousPage: () -> Unit,
@@ -150,8 +162,20 @@ fun ShareScreen(
     onRevokeShare: (String) -> Unit,
     onCopyLink: (String) -> Unit,
     onOpenLink: (String) -> Unit,
-    onOpenShareRules: () -> Unit,
 ) {
+    if (createDialogVisible) {
+        ShareCreateDialog(
+            uiState = uiState,
+            onComposeModeSelected = onComposeModeSelected,
+            onStrategySelected = onStrategySelected,
+            onTextDraftChange = onTextDraftChange,
+            onChooseFile = onChooseFile,
+            onClearSelectedFile = onClearSelectedFile,
+            onCreateShare = onCreateShare,
+            onDismiss = onCreateDialogDismiss,
+        )
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -164,33 +188,6 @@ fun ShareScreen(
             item {
                 PageErrorBanner(message = uiState.errorMessage)
             }
-        }
-
-        item {
-            ShareStrategyPanel(
-                composeMode = uiState.composeMode,
-                selectedStrategy = uiState.strategyKey,
-                strategySummaryTitle = uiState.strategySummary.title,
-                strategySummaryDescription = uiState.strategySummary.description,
-                strategySummaryCopyLabel = uiState.strategySummary.copyLabel,
-                onComposeModeSelected = onComposeModeSelected,
-                onStrategySelected = onStrategySelected,
-                onOpenShareRules = onOpenShareRules,
-            )
-        }
-
-        item {
-            ShareCreatePanel(
-                composeMode = uiState.composeMode,
-                textDraft = uiState.textDraft,
-                selectedFile = uiState.selectedFile,
-                maxUploadBytes = uiState.maxUploadBytes,
-                isCreating = uiState.isCreating,
-                onTextDraftChange = onTextDraftChange,
-                onChooseFile = onChooseFile,
-                onClearSelectedFile = onClearSelectedFile,
-                onCreateShare = onCreateShare,
-            )
         }
 
         if (uiState.latestShareLink.isNotBlank()) {
@@ -340,6 +337,85 @@ fun ShareRulesScreen(
 }
 
 @Composable
+private fun ShareCreateDialog(
+    uiState: SharesUiState,
+    onComposeModeSelected: (ShareComposeMode) -> Unit,
+    onStrategySelected: (ShareStrategyKey) -> Unit,
+    onTextDraftChange: (String) -> Unit,
+    onChooseFile: () -> Unit,
+    onClearSelectedFile: () -> Unit,
+    onCreateShare: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = {
+            if (!uiState.isCreating) {
+                onDismiss()
+            }
+        },
+        title = {
+            Text("创建分享")
+        },
+        text = {
+            Column(
+                // 弹窗内容可能包含文件信息和多组策略选项，限制高度后再滚动适配小屏幕。
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+                    .testTag(AppTestTags.ShareCreateDialog),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (uiState.errorMessage != null) {
+                    PageErrorBanner(message = uiState.errorMessage)
+                }
+
+                ShareStrategyPanel(
+                    composeMode = uiState.composeMode,
+                    selectedStrategy = uiState.strategyKey,
+                    strategySummaryTitle = uiState.strategySummary.title,
+                    strategySummaryDescription = uiState.strategySummary.description,
+                    strategySummaryCopyLabel = uiState.strategySummary.copyLabel,
+                    onComposeModeSelected = onComposeModeSelected,
+                    onStrategySelected = onStrategySelected,
+                )
+
+                ShareCreatePanel(
+                    composeMode = uiState.composeMode,
+                    textDraft = uiState.textDraft,
+                    selectedFile = uiState.selectedFile,
+                    maxUploadBytes = uiState.maxUploadBytes,
+                    onTextDraftChange = onTextDraftChange,
+                    onChooseFile = onChooseFile,
+                    onClearSelectedFile = onClearSelectedFile,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onCreateShare,
+                enabled = !uiState.isCreating,
+            ) {
+                Text(
+                    if (uiState.isCreating) {
+                        "创建中..."
+                    } else {
+                        "创建"
+                    },
+                )
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                enabled = !uiState.isCreating,
+            ) {
+                Text("取消")
+            }
+        },
+    )
+}
+
+@Composable
 private fun ShareStrategyPanel(
     composeMode: ShareComposeMode,
     selectedStrategy: ShareStrategyKey,
@@ -348,7 +424,6 @@ private fun ShareStrategyPanel(
     strategySummaryCopyLabel: String,
     onComposeModeSelected: (ShareComposeMode) -> Unit,
     onStrategySelected: (ShareStrategyKey) -> Unit,
-    onOpenShareRules: () -> Unit,
 ) {
     Surface(
         shape = RoundedCornerShape(28.dp),
@@ -357,7 +432,7 @@ private fun ShareStrategyPanel(
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Text(
-                text = "创建分享",
+                text = "类型和策略",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -407,12 +482,6 @@ private fun ShareStrategyPanel(
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     MetaPill(label = strategySummaryCopyLabel)
-                    Spacer(modifier = Modifier.height(14.dp))
-                    OutlinedButton(onClick = onOpenShareRules) {
-                        Icon(imageVector = Icons.Outlined.Settings, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("调整分享规则")
-                    }
                 }
             }
         }
@@ -425,11 +494,9 @@ private fun ShareCreatePanel(
     textDraft: String,
     selectedFile: PickedLocalFile?,
     maxUploadBytes: Long,
-    isCreating: Boolean,
     onTextDraftChange: (String) -> Unit,
     onChooseFile: () -> Unit,
     onClearSelectedFile: () -> Unit,
-    onCreateShare: () -> Unit,
 ) {
     Surface(
         shape = RoundedCornerShape(28.dp),
@@ -453,31 +520,6 @@ private fun ShareCreatePanel(
                     maxUploadBytes = maxUploadBytes,
                     onChooseFile = onChooseFile,
                     onClearSelectedFile = onClearSelectedFile,
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = onCreateShare,
-                enabled = !isCreating,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = if (composeMode == ShareComposeMode.Text) {
-                        Icons.Outlined.Share
-                    } else {
-                        Icons.Outlined.CloudUpload
-                    },
-                    contentDescription = null,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    if (isCreating) {
-                        "正在生成..."
-                    } else {
-                        if (composeMode == ShareComposeMode.Text) "生成文本分享" else "生成文件分享"
-                    },
                 )
             }
         }

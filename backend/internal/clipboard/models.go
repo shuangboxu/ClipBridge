@@ -17,6 +17,18 @@ type Item struct {
 	CreatedAt      time.Time
 }
 
+type HistorySettings struct {
+	UserID        string
+	RetentionDays int
+	HistoryLimit  int
+	UpdatedAt     time.Time
+}
+
+type HistorySettingsInput struct {
+	RetentionDays int
+	HistoryLimit  int
+}
+
 type SyncSnapshot struct {
 	LatestSeq           int64
 	CurrentDeviceAckSeq int64
@@ -43,6 +55,21 @@ type HistoryResult struct {
 	Items               []Item
 	HasMore             bool
 	NextBeforeSeq       *int64
+	LatestSeq           int64
+	CurrentDeviceAckSeq int64
+}
+
+type HistoryDeleteResult struct {
+	Item                Item
+	Deleted             bool
+	DeletedActiveCount  int
+	LatestSeq           int64
+	CurrentDeviceAckSeq int64
+}
+
+type HistoryCleanupResult struct {
+	DeletedCount        int
+	Settings            HistorySettings
 	LatestSeq           int64
 	CurrentDeviceAckSeq int64
 }

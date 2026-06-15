@@ -156,6 +156,10 @@ function registerEventListeners() {
                 event.preventDefault();
                 void handlePasswordChangeSubmit(form);
                 return;
+            case "history-settings-form":
+                event.preventDefault();
+                void handleHistorySettingsSubmit(form);
+                return;
             case "share-compose-form":
                 event.preventDefault();
                 void handleShareComposeSubmit(form);
@@ -203,6 +207,9 @@ function registerEventListeners() {
                 state.pageError = null;
                 openSettingsModal(target.getAttribute("data-category") || "general");
                 render();
+                if (state.settingsModal.activeCategory === "history") {
+                    void loadClipboardHistorySettings({ silent: true });
+                }
                 break;
             case "close-settings":
                 state.pageError = null;
@@ -213,6 +220,12 @@ function registerEventListeners() {
                 state.pageError = null;
                 selectSettingsCategory(target.getAttribute("data-category") || "general");
                 render();
+                if (state.settingsModal.activeCategory === "history") {
+                    void loadClipboardHistorySettings({ silent: true });
+                }
+                break;
+            case "open-project-link":
+                window.open("https://github.com/shuangboxu/ClipBridge", "_blank", "noopener");
                 break;
             case "reload-devices":
                 void loadDevices({ silent: false });
@@ -320,6 +333,15 @@ function registerEventListeners() {
             case "copy-clipboard-item":
                 void handleCopyClipboardItem(target.getAttribute("data-item-id") || "");
                 break;
+            case "delete-clipboard-item":
+                void handleClipboardItemDelete(target.getAttribute("data-item-id") || "");
+                break;
+            case "clear-clipboard-history":
+                void handleClipboardHistoryClear();
+                break;
+            case "cleanup-clipboard-history":
+                void handleClipboardHistoryCleanup();
+                break;
             case "apply-share-filter":
                 void handleApplyShareFilter();
                 break;
@@ -400,6 +422,15 @@ function registerEventListeners() {
                 break;
             case "public-share-password":
                 state.publicShare.password = target.value;
+                break;
+            case "history-retention-days":
+                state.clipboard.retentionDays = Number(target.value || 0);
+                break;
+            case "history-limit":
+                state.clipboard.maxStoredItems = Number(target.value || 1000);
+                break;
+            case "history-cleanup-days":
+                state.clipboard.cleanupDaysDraft = target.value;
                 break;
             default:
                 break;
@@ -607,7 +638,10 @@ async function handleRouteChange() {
             await loadDevices({ silent: true });
         }
         if (state.route === "history") {
-            await loadClipboardHistory({ silent: true });
+            await Promise.all([
+                loadClipboardHistory({ silent: true }),
+                loadClipboardHistorySettings({ silent: true })
+            ]);
         }
         if (state.route === "files") {
             await loadFiles({ silent: true });
@@ -1102,6 +1136,31 @@ async function loadClipboardHistory(options = {}) {
         state.pageError = toUserMessage(error);
     } finally {
         if (!options.silent && isPending("clipboard-history")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function loadClipboardHistorySettings(options = {}) {
+    if (!state.session) {
+        return;
+    }
+
+    if (!options.silent) {
+        setPending("history-settings-load");
+        state.pageError = null;
+        clearToast();
+        render();
+    }
+
+    try {
+        const data = await request("/v1/clipboard/history/settings");
+        applyClipboardHistorySettings(data.settings || {});
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (!options.silent && isPending("history-settings-load")) {
             clearPending();
         }
         render();
@@ -2167,6 +2226,165 @@ async function handleCopyClipboardItem(itemID) {
     }
 }
 
+async function handleClipboardItemDelete(itemID) {
+    const item = state.clipboard.items.find((nextItem) => nextItem.id === itemID);
+    if (!item) {
+        state.pageError = "这条记录不存在，可能已经被刷新覆盖。";
+        render();
+        return;
+    }
+    if (!window.confirm(`确认删除 SEQ #${item.seq} 这条文本历史吗？`)) {
+        return;
+    }
+
+    const pendingKey = `clipboard-delete:${itemID}`;
+    setPending(pendingKey);
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request(`/v1/clipboard/items/${encodeURIComponent(itemID)}`, {
+            method: "DELETE"
+        });
+        applyClipboardServerState(data);
+        state.clipboard.items = state.clipboard.items.filter((nextItem) => nextItem.id !== itemID);
+        if (state.clipboardPanel.itemId === itemID) {
+            closeClipboardPanel();
+        }
+        if (state.clipboard.items.length === 0 && state.clipboard.historyPageIndex > 0) {
+            state.clipboard.historyPageIndex -= 1;
+        }
+        await loadClipboardHistory({ silent: true });
+        showToast("历史记录已删除");
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending(pendingKey)) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleHistorySettingsSubmit(form) {
+    const formData = new FormData(form);
+    const retentionDays = Number(String(formData.get("retention_days") || "0").trim());
+    const historyLimit = Number(String(formData.get("history_limit") || "1000").trim());
+
+    state.clipboard.retentionDays = retentionDays;
+    state.clipboard.maxStoredItems = historyLimit;
+    if (!Number.isInteger(retentionDays) || retentionDays < 0) {
+        state.pageError = "保留天数必须是大于等于 0 的整数。";
+        render();
+        return;
+    }
+    if (!Number.isInteger(historyLimit) || historyLimit <= 0) {
+        state.pageError = "最大记录数必须是正整数。";
+        render();
+        return;
+    }
+
+    setPending("history-settings");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request("/v1/clipboard/history/settings", {
+            method: "PUT",
+            body: {
+                retention_days: retentionDays,
+                history_limit: historyLimit
+            }
+        });
+        applyClipboardServerState(data);
+        applyClipboardHistorySettings(data.settings || {});
+        resetClipboardPager();
+        closeClipboardPanel();
+        await loadClipboardHistory({ silent: true });
+        showToast(`历史设置已保存，清理 ${Number(data.deleted_count || 0)} 条记录`);
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("history-settings")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleClipboardHistoryCleanup() {
+    const input = document.getElementById("history-cleanup-days");
+    const days = Number(input instanceof HTMLInputElement ? input.value : state.clipboard.cleanupDaysDraft);
+    state.clipboard.cleanupDaysDraft = String(days || "");
+    if (!Number.isInteger(days) || days <= 0) {
+        state.pageError = "清理天数必须是正整数。";
+        render();
+        return;
+    }
+    if (!window.confirm(`确认删除 ${days} 天前的文本历史吗？`)) {
+        return;
+    }
+
+    setPending("history-cleanup");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request("/v1/clipboard/history/cleanup", {
+            method: "POST",
+            body: {
+                days
+            }
+        });
+        applyClipboardServerState(data);
+        applyClipboardHistorySettings(data.settings || {});
+        resetClipboardPager();
+        closeClipboardPanel();
+        await loadClipboardHistory({ silent: true });
+        showToast(`已清理 ${Number(data.deleted_count || 0)} 条历史记录`);
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("history-cleanup")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
+async function handleClipboardHistoryClear() {
+    if (!window.confirm("确认清空当前账号的全部文本历史吗？")) {
+        return;
+    }
+
+    setPending("history-clear");
+    state.pageError = null;
+    clearToast();
+    render();
+
+    try {
+        const data = await request("/v1/clipboard/history/clear", {
+            method: "POST"
+        });
+        applyClipboardServerState(data);
+        applyClipboardHistorySettings(data.settings || {});
+        resetClipboardPager();
+        closeClipboardPanel();
+        state.clipboard.items = [];
+        showToast(`已清空 ${Number(data.deleted_count || 0)} 条历史记录`);
+    } catch (error) {
+        state.pageError = toUserMessage(error);
+    } finally {
+        if (isPending("history-clear")) {
+            clearPending();
+        }
+        render();
+    }
+}
+
 async function handleHistoryPrev() {
     if (state.clipboard.historyPageIndex <= 0 || isPending("clipboard-history")) {
         return;
@@ -2647,8 +2865,12 @@ async function ensureClipboardCaughtUp(options = {}) {
                 mergeClipboardItems(items);
 
                 const nextSinceSeq = Number(data.next_since_seq || sinceSeq);
+                if (nextSinceSeq > sinceSeq) {
+                    // 清理历史会让 seq 中间出现缺口；补拉接口返回的 next_since_seq
+                    // 代表服务端允许客户端推进到的位置，因此这里直接推进待 ACK 游标。
+                    state.clipboard.pendingAckSeq = Math.max(state.clipboard.pendingAckSeq, nextSinceSeq);
+                }
                 if (items.length > 0) {
-                    tryAdvancePendingAck(nextSinceSeq);
                     totalPulled += items.length;
                 }
                 if (!data.has_more || items.length === 0) {
@@ -2709,6 +2931,15 @@ function applyClipboardServerState(data) {
     if (state.clipboard.pendingAckSeq < state.clipboard.lastAckSeq) {
         state.clipboard.pendingAckSeq = state.clipboard.lastAckSeq;
     }
+}
+
+function applyClipboardHistorySettings(settings) {
+    if (!settings || typeof settings !== "object") {
+        return;
+    }
+    state.clipboard.retentionDays = Math.max(Number(settings.retention_days || 0), 0);
+    state.clipboard.maxStoredItems = Math.max(Number(settings.history_limit || 1000), 1);
+    state.clipboard.settingsUpdatedAt = String(settings.updated_at || "");
 }
 
 function tryAdvancePendingAck(seq) {

@@ -31,7 +31,10 @@ import static com.xushuangbo.clipbridge.windows.api.ApiModels.AdminRequest;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.AdminSettings;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.AdminUser;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.BandwidthRequest;
+import static com.xushuangbo.clipbridge.windows.api.ApiModels.ClipboardHistoryCleanupResult;
+import static com.xushuangbo.clipbridge.windows.api.ApiModels.ClipboardHistoryDeleteResult;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.ClipboardHistoryResult;
+import static com.xushuangbo.clipbridge.windows.api.ApiModels.ClipboardHistorySettings;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.ClipboardItem;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.ClipboardUploadResult;
 import static com.xushuangbo.clipbridge.windows.api.ApiModels.CreateClipboardResult;
@@ -293,6 +296,45 @@ public class ApiClient {
         long currentDeviceAckSeq = data.path("current_device_ack_seq").asLong(seq);
         stateStore.update(state -> state.setLastAckSeq(Math.max(state.getLastAckSeq(), currentDeviceAckSeq)));
         return currentDeviceAckSeq;
+    }
+
+    public ClipboardHistoryDeleteResult deleteClipboardItem(String itemId) {
+        JsonNode data = requestJson("DELETE", currentBaseUrl(), "/v1/clipboard/items/" + urlEncode(itemId), null, true, true);
+        long latestSeq = data.path("latest_seq").asLong(0L);
+        long currentDeviceAckSeq = data.path("current_device_ack_seq").asLong(0L);
+        advanceClipboardAck(latestSeq, currentDeviceAckSeq);
+        return new ClipboardHistoryDeleteResult(
+            parseClipboardItem(data.path("item")),
+            data.path("deleted").asBoolean(false),
+            data.path("deleted_count").asInt(0),
+            latestSeq,
+            currentDeviceAckSeq
+        );
+    }
+
+    public ClipboardHistoryCleanupResult clearClipboardHistory() {
+        JsonNode data = requestJson("POST", currentBaseUrl(), "/v1/clipboard/history/clear", null, true, true);
+        return parseClipboardHistoryCleanupResult(data);
+    }
+
+    public ClipboardHistoryCleanupResult cleanupClipboardHistory(int days) {
+        ObjectNode body = mapper.createObjectNode();
+        body.put("days", Math.max(0, days));
+        JsonNode data = requestJson("POST", currentBaseUrl(), "/v1/clipboard/history/cleanup", body, true, true);
+        return parseClipboardHistoryCleanupResult(data);
+    }
+
+    public ClipboardHistorySettings getClipboardHistorySettings() {
+        JsonNode data = requestJson("GET", currentBaseUrl(), "/v1/clipboard/history/settings", null, true, true);
+        return parseClipboardHistorySettings(data.path("settings"));
+    }
+
+    public ClipboardHistoryCleanupResult updateClipboardHistorySettings(int retentionDays, int historyLimit) {
+        ObjectNode body = mapper.createObjectNode();
+        body.put("retention_days", Math.max(0, retentionDays));
+        body.put("history_limit", Math.max(1, historyLimit));
+        JsonNode data = requestJson("PUT", currentBaseUrl(), "/v1/clipboard/history/settings", body, true, true);
+        return parseClipboardHistoryCleanupResult(data);
     }
 
     public FileItem uploadFile(Path filePath) {
@@ -984,6 +1026,37 @@ public class ApiClient {
             result.add(parseClipboardItem(item));
         }
         return result;
+    }
+
+    private ClipboardHistorySettings parseClipboardHistorySettings(JsonNode settings) {
+        return new ClipboardHistorySettings(
+            settings.path("retention_days").asInt(0),
+            settings.path("history_limit").asInt(1000),
+            settings.path("updated_at").asText("")
+        );
+    }
+
+    private ClipboardHistoryCleanupResult parseClipboardHistoryCleanupResult(JsonNode data) {
+        long latestSeq = data.path("latest_seq").asLong(0L);
+        long currentDeviceAckSeq = data.path("current_device_ack_seq").asLong(0L);
+        advanceClipboardAck(latestSeq, currentDeviceAckSeq);
+        return new ClipboardHistoryCleanupResult(
+            data.path("deleted_count").asInt(0),
+            parseClipboardHistorySettings(data.path("settings")),
+            latestSeq,
+            currentDeviceAckSeq
+        );
+    }
+
+    private void advanceClipboardAck(long latestSeq, long currentDeviceAckSeq) {
+        long nextAckSeq = Math.max(latestSeq, currentDeviceAckSeq);
+        if (nextAckSeq <= 0L) {
+            return;
+        }
+
+        // 中文注释：清理或删除后，某些旧 seq 可能已经不可见。
+        // 这里把本地 ack 游标推进到当前可接受的最高位置，避免客户端反复补拉已经被清理掉的历史。
+        stateStore.update(state -> state.setLastAckSeq(Math.max(state.getLastAckSeq(), nextAckSeq)));
     }
 
     private FileItem parseFileItem(JsonNode item) {
