@@ -41,20 +41,11 @@ fun SyncRuntimeEffect(
         }
 
         SyncServiceController.startClipboardSync(appContext)
-        if (appInForegroundValue) {
-            // 应用在前台时不显示悬浮球，避免遮挡当前界面操作。
-            SyncServiceController.stopFloatingSync(appContext)
-            return
-        }
-
-        if (SyncServiceController.canDrawOverlays(appContext)) {
+        val hasOverlayPermission = SyncServiceController.canDrawOverlays(appContext)
+        if (hasOverlayPermission) {
             overlayHintShown = false
-            SyncServiceController.startFloatingSync(appContext)
-            return
-        }
-
-        SyncServiceController.stopFloatingSync(appContext)
-        if (showOverlayHint && !overlayHintShown) {
+        } else if (showOverlayHint && !overlayHintShown) {
+            // 首次开启同步时就主动拉起授权页，避免用户切到后台后才发现悬浮球无法显示。
             overlayHintShown = true
             Toast.makeText(
                 context,
@@ -70,6 +61,19 @@ fun SyncRuntimeEffect(
                 ).show()
             }
         }
+
+        if (appInForegroundValue) {
+            // 应用在前台时不显示悬浮球，避免遮挡当前界面操作。
+            SyncServiceController.stopFloatingSync(appContext)
+            return
+        }
+
+        if (hasOverlayPermission) {
+            SyncServiceController.startFloatingSync(appContext)
+            return
+        }
+
+        SyncServiceController.stopFloatingSync(appContext)
     }
 
     LaunchedEffect(syncEnabled, hasSession) {
