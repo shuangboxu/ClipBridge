@@ -107,6 +107,8 @@ public class MainApp extends Application {
     private static final int SHARE_PAGE_SIZE = 10;
     private static final long BYTES_PER_MB = 1024L * 1024L;
     private static final String PROJECT_GITHUB_URL = "https://github.com/shuangboxu/ClipBridge";
+    private static final String PROJECT_RELEASES_URL = PROJECT_GITHUB_URL + "/releases/latest";
+    private static final String PROJECT_ANDROID_DOWNLOAD_URL = PROJECT_GITHUB_URL + "/releases/latest/download/ClipBridge-Android.apk";
 
     private final AppStateStore stateStore = new AppStateStore();
     private final ApiClient apiClient = new ApiClient(stateStore);
@@ -1631,14 +1633,22 @@ public class MainApp extends Application {
         Label githubUrlLabel = createSecondaryValueLabel(PROJECT_GITHUB_URL);
         Button openGithubButton = createGhostButton("打开 GitHub");
         openGithubButton.setOnAction(event -> openProjectGithub());
+        Label windowsDownloadLabel = createSecondaryValueLabel("标准版 / Lite 版");
+        Button openWindowsDownloadButton = createGhostButton("打开 Release 页面");
+        openWindowsDownloadButton.setOnAction(event -> openWindowsDownloadPage());
+        VBox windowsDownloadBox = new VBox(8, windowsDownloadLabel, openWindowsDownloadButton);
+        Label androidDownloadLabel = createSecondaryValueLabel("APK 安装包");
+        Button openAndroidDownloadButton = createGhostButton("下载 Android APK");
+        openAndroidDownloadButton.setOnAction(event -> openAndroidDownload());
+        VBox androidDownloadBox = new VBox(8, androidDownloadLabel, openAndroidDownloadButton);
 
         VBox content = new VBox(16);
         content.getChildren().add(
             createRequestCard("关于", List.of(
                 createLabeledField("GitHub 仓库", githubUrlLabel),
                 openGithubButton,
-                createLabeledField("Windows 下载", createSecondaryValueLabel("即将开放")),
-                createLabeledField("Android 下载", createSecondaryValueLabel("即将开放"))
+                createLabeledField("Windows 下载", windowsDownloadBox),
+                createLabeledField("Android 下载", androidDownloadBox)
             ))
         );
         return content;
@@ -3560,20 +3570,33 @@ public class MainApp extends Application {
             showToast("当前没有可打开的分享链接");
             return;
         }
-        try {
-            Desktop.getDesktop().browse(URI.create(link));
-            showToast("已在系统浏览器中打开分享链接");
-        } catch (Exception error) {
-            showToast("打开分享链接失败: " + error.getMessage());
-        }
+        openExternalLink(link, "已在系统浏览器中打开分享链接", "打开分享链接失败");
     }
 
     private void openProjectGithub() {
+        openExternalLink(PROJECT_GITHUB_URL, "已在系统浏览器中打开 GitHub 仓库", "打开 GitHub 仓库失败");
+    }
+
+    private void openWindowsDownloadPage() {
+        openExternalLink(PROJECT_RELEASES_URL, "已在系统浏览器中打开 Windows 下载页", "打开 Windows 下载页失败");
+    }
+
+    private void openAndroidDownload() {
+        openExternalLink(PROJECT_ANDROID_DOWNLOAD_URL, "已在系统浏览器中打开 Android 下载链接", "打开 Android 下载链接失败");
+    }
+
+    private void openExternalLink(String link, String successMessage, String failurePrefix) {
+        if (link == null || link.isBlank()) {
+            showToast("当前没有可打开的链接");
+            return;
+        }
+
         try {
-            Desktop.getDesktop().browse(URI.create(PROJECT_GITHUB_URL));
-            showToast("已在系统浏览器中打开 GitHub 仓库");
+            // 统一收口外链打开逻辑，避免不同入口各自拼提示文案，后续排查问题更直接。
+            Desktop.getDesktop().browse(URI.create(link));
+            showToast(successMessage);
         } catch (Exception error) {
-            showToast("打开 GitHub 仓库失败: " + error.getMessage());
+            showToast(failurePrefix + ": " + error.getMessage());
         }
     }
 

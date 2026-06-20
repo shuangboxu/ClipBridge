@@ -30,6 +30,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.xushuangbo.clipbridge.ui.components.PageErrorBanner
 
+private const val PROJECT_GITHUB_URL = "https://github.com/shuangboxu/ClipBridge"
+private const val PROJECT_RELEASES_URL = "$PROJECT_GITHUB_URL/releases/latest"
+private const val PROJECT_ANDROID_DOWNLOAD_URL = "$PROJECT_GITHUB_URL/releases/latest/download/ClipBridge-Android.apk"
+
 @Composable
 internal fun SettingsScreen(
     innerPadding: PaddingValues,
@@ -82,12 +86,9 @@ internal fun SettingsScreen(
             Spacer(modifier = Modifier.height(22.dp))
         }
         AboutSection(
-            onOpenGithub = {
-                runCatching { uriHandler.openUri("https://github.com/shuangboxu/ClipBridge") }
-                    .onFailure {
-                        Toast.makeText(context, "无法打开 GitHub 仓库", Toast.LENGTH_SHORT).show()
-                    }
-            },
+            onOpenGithub = { openExternalLink(uriHandler, context, PROJECT_GITHUB_URL, "无法打开 GitHub 仓库") },
+            onOpenWindowsDownload = { openExternalLink(uriHandler, context, PROJECT_RELEASES_URL, "无法打开 Windows 下载页") },
+            onOpenAndroidDownload = { openExternalLink(uriHandler, context, PROJECT_ANDROID_DOWNLOAD_URL, "无法打开 Android 下载链接") },
         )
         Spacer(modifier = Modifier.height(22.dp))
         Spacer(modifier = Modifier.height(6.dp))
@@ -227,6 +228,8 @@ internal fun SecurityScreen(
 @Composable
 private fun AboutSection(
     onOpenGithub: () -> Unit,
+    onOpenWindowsDownload: () -> Unit,
+    onOpenAndroidDownload: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -247,15 +250,36 @@ private fun AboutSection(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
-                AboutRow(title = "Windows 下载", value = "即将开放")
+                AboutRow(
+                    title = "Windows 下载",
+                    value = "标准版 / Lite 版",
+                    onClick = onOpenWindowsDownload,
+                )
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                     modifier = Modifier.padding(horizontal = 18.dp),
                 )
-                AboutRow(title = "Android 下载", value = "即将开放")
+                AboutRow(
+                    title = "Android 下载",
+                    value = "APK 安装包",
+                    onClick = onOpenAndroidDownload,
+                )
             }
         }
     }
+}
+
+private fun openExternalLink(
+    uriHandler: androidx.compose.ui.platform.UriHandler,
+    context: android.content.Context,
+    link: String,
+    failureMessage: String,
+) {
+    // 设置页里多个入口都会跳外链，这里统一收口，后续改链接或排查打开失败时更直接。
+    runCatching { uriHandler.openUri(link) }
+        .onFailure {
+            Toast.makeText(context, failureMessage, Toast.LENGTH_SHORT).show()
+        }
 }
 
 @Composable
