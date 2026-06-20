@@ -11,17 +11,23 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"clipbridge/backend/internal/app"
 	"clipbridge/backend/internal/httpapi/authcontext"
 	"clipbridge/backend/internal/httpapi/response"
 	"clipbridge/backend/internal/shares"
+	"github.com/skip2/go-qrcode"
 )
 
 const (
 	defaultShareExpireSeconds = int64(24 * 60 * 60)
 	maxShareExpireSeconds     = int64(3650 * 24 * 60 * 60)
 	shareMultipartMemory      = 32 << 20
+	defaultShareQRCodeSize    = 280
+	minShareQRCodeSize        = 128
+	maxShareQRCodeSize        = 1024
+	maxShareQRCodeContentSize = 2048
 )
 
 type shareService interface {
@@ -340,6 +346,37 @@ func (h *ShareHandler) PublicMeta(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, r, map[string]any{
 		"share": buildPublicShareMetaData(item),
 	})
+}
+
+func (h *ShareHandler) PublicQRCode(w http.ResponseWriter, r *http.Request) {
+	content := strings.TrimSpace(r.URL.Query().Get("content"))
+	if content == "" {
+		response.Error(w, r, http.StatusBadRequest, "content is required")
+		return
+	}
+	if utf8.RuneCountInString(content) > maxShareQRCodeContentSize {
+		response.Error(w, r, http.StatusBadRequest, "content is too long")
+		return
+	}
+
+	size, err := parseShareQRCodeSize(r.URL.Query().Get("size"))
+	if err != nil {
+		response.Error(w, r, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Web 端只需要一个稳定的 PNG 地址，
+	// 这里直接在服务端生成二维码，前端就不用再额外引入复杂的二维码生成库。
+	imageBytes, err := qrcode.Encode(content, qrcode.Medium, size)
+	if err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "generate share qrcode failed")
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(imageBytes)
 }
 
 func (h *ShareHandler) PublicContent(w http.ResponseWriter, r *http.Request) {
@@ -777,6 +814,21 @@ func buildShareFileData(file shares.ShareFile) *shareFileData {
 		IsImage:      file.IsImageFile(),
 		IsVideo:      file.IsVideoFile(),
 	}
+}
+
+func parseShareQRCodeSize(raw string) (int, error) {
+	if strings.TrimSpace(raw) == "" {
+		return defaultShareQRCodeSize, nil
+	}
+
+	size, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, errors.New("size must be an integer")
+	}
+	if size < minShareQRCodeSize || size > maxShareQRCodeSize {
+		return 0, errors.New("size is out of range")
+	}
+	return size, nil
 }
 
 func buildShareEncryptionInput(req *shareEncryptionRequest) shares.EncryptionMetadata {

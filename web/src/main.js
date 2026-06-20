@@ -1,8 +1,9 @@
-import { AUTH_ROUTE, DEFAULT_ROUTE, PROTECTED_ROUTES } from "./config/app.js";
+import { AUTH_ROUTE, AUTH_ROUTES, DEFAULT_ROUTE, PROTECTED_ROUTES, REGISTER_ROUTE } from "./config/app.js";
 import { renderApp } from "./render/layout.js";
 import { ensureValidAccessToken, request, requestRaw } from "./services/api.js";
 import {
     clearPending,
+    closeShareQRCodeDialog,
     closeFilePanel,
     closeSharePanel,
     clearSettingsPasswordForm,
@@ -13,6 +14,7 @@ import {
     isPending,
     openClipboardPanel,
     openFilePanel,
+    openShareQRCodeDialog,
     openSharePanel,
     openSettingsModal,
     openDevicePanel,
@@ -42,7 +44,11 @@ import {
     readTextFromClipboard,
     writeTextToClipboard
 } from "./utils/browser.js";
-import { toUserMessage } from "./utils/format.js";
+import {
+    bandwidthKbpsToMBpsInput,
+    bandwidthMBpsToKbps,
+    toUserMessage
+} from "./utils/format.js";
 
 const appRoot = document.getElementById("app");
 let toastTimerID = 0;
@@ -276,6 +282,14 @@ function registerEventListeners() {
                 closeSharePanel();
                 render();
                 break;
+            case "open-share-qr":
+                openShareQRCodeDialog(target.getAttribute("data-share-token") || "");
+                render();
+                break;
+            case "close-share-qr":
+                closeShareQRCodeDialog();
+                render();
+                break;
             case "select-share-strategy":
                 selectShareStrategy(target.getAttribute("data-strategy") || "expire");
                 render();
@@ -390,6 +404,12 @@ function registerEventListeners() {
         if (event.key === "Escape" && state.settingsModal.isOpen) {
             state.pageError = null;
             closeSettingsModal();
+            render();
+            return;
+        }
+
+        if (event.key === "Escape" && state.shares.qrCodeDialogToken) {
+            closeShareQRCodeDialog();
             render();
             return;
         }
@@ -509,8 +529,10 @@ function registerEventListeners() {
             return;
         }
 
+        // 中文注释：`<details>` 的 toggle 事件不会像 click 一样适合常规冒泡代理，
+        // 这里在捕获阶段就把展开状态写回 state，后续整页重绘时才能继续保持当前开合状态。
         setAdminPanelOpen(panelKey, target.open);
-    });
+    }, true);
 
     document.addEventListener("dragenter", (event) => {
         const target = event.target instanceof Element ? event.target.closest("[data-share-dropzone]") : null;
@@ -614,14 +636,14 @@ async function handleRouteChange() {
             render();
         }
 
-        const authenticated = await ensureAuthenticated({ silent: state.route === AUTH_ROUTE });
+        const authenticated = await ensureAuthenticated({ silent: AUTH_ROUTES.has(state.route) });
         if (!authenticated) {
             return;
         }
 
         await ensureRealtimeConnection();
 
-        if (state.route === AUTH_ROUTE) {
+        if (AUTH_ROUTES.has(state.route)) {
             navigate(DEFAULT_ROUTE);
             return;
         }
@@ -655,9 +677,13 @@ async function handleRouteChange() {
         if (state.route === "admin") {
             await loadAdminData({ silent: true });
         }
-    } else if (state.route !== AUTH_ROUTE) {
+    } else if (!AUTH_ROUTES.has(state.route)) {
         navigate(AUTH_ROUTE);
         return;
+    } else {
+        // 中文注释：未登录时主动拉一次公开注册策略，
+        // 这样登录页和 `/#/register` 都能及时拿到管理员最新的开关状态。
+        await loadAuthRegistrationPolicy({ silent: true });
     }
 
     state.isBootstrapping = false;
@@ -665,14 +691,26 @@ async function handleRouteChange() {
 }
 
 async function handleAuthSubmit(form) {
+    const isRegisterMode = state.route === REGISTER_ROUTE;
     const formData = new FormData(form);
     const username = String(formData.get("username") || "").trim();
     const password = String(formData.get("password") || "");
+    const confirmPassword = String(formData.get("confirm_password") || "");
 
     state.authForm = {
         username,
-        password
+        password,
+        confirmPassword
     };
+
+    // 中文注释：注册模式下先做最基础的前端校验，
+    // 可以尽早把“确认密码不一致”这种问题拦在浏览器里。
+    if (isRegisterMode && password !== confirmPassword) {
+        state.pageError = "两次输入的密码不一致。";
+        clearToast();
+        render();
+        return;
+    }
 
     setPending("auth");
     state.pageError = null;
@@ -680,7 +718,8 @@ async function handleAuthSubmit(form) {
     render();
 
     try {
-        const data = await request("/v1/auth/login", {
+        // 中文注释：登录和注册共用同一张表单，只在这里根据当前路由切换接口。
+        const data = await request(isRegisterMode ? "/v1/auth/register" : "/v1/auth/login", {
             method: "POST",
             body: {
                 username,
@@ -706,7 +745,29 @@ async function handleAuthSubmit(form) {
         state.pageError = toUserMessage(error);
         render();
     } finally {
+        state.authForm.password = "";
+        state.authForm.confirmPassword = "";
         clearPending();
+    }
+}
+
+async function loadAuthRegistrationPolicy(options = {}) {
+    try {
+        const data = await request("/v1/auth/registration-policy", {
+            withAuth: false
+        });
+
+        state.authRegistrationPolicy = {
+            allowRegistration: Boolean(data.allow_registration)
+        };
+    } catch (error) {
+        state.authRegistrationPolicy = {
+            allowRegistration: null
+        };
+        if (!options.silent) {
+            throw error;
+        }
+        console.warn("load auth registration policy failed", error);
     }
 }
 
@@ -1357,8 +1418,8 @@ async function handleBandwidthRequestSubmit(form) {
         await request("/v1/account/bandwidth-requests", {
             method: "POST",
             body: {
-                requested_upload_kbps: Number(requestedUploadKbps || 0),
-                requested_download_kbps: Number(requestedDownloadKbps || 0),
+                requested_upload_kbps: bandwidthMBpsToKbps(requestedUploadKbps),
+                requested_download_kbps: bandwidthMBpsToKbps(requestedDownloadKbps),
                 reason
             }
         });
@@ -1429,10 +1490,10 @@ async function handleAdminSettingsSubmit(form) {
             body: {
                 max_user_count: Number(draft.maxUserCount || 0),
                 default_storage_quota_mb: Number(draft.defaultStorageQuotaMB || 0),
-                default_upload_bandwidth_kbps: Number(draft.defaultUploadBandwidthKbps || 0),
-                default_download_bandwidth_kbps: Number(draft.defaultDownloadBandwidthKbps || 0),
-                max_user_upload_bandwidth_kbps: Number(draft.maxUserUploadBandwidthKbps || 0),
-                max_user_download_bandwidth_kbps: Number(draft.maxUserDownloadBandwidthKbps || 0),
+                default_upload_bandwidth_kbps: bandwidthMBpsToKbps(draft.defaultUploadBandwidthKbps),
+                default_download_bandwidth_kbps: bandwidthMBpsToKbps(draft.defaultDownloadBandwidthKbps),
+                max_user_upload_bandwidth_kbps: bandwidthMBpsToKbps(draft.maxUserUploadBandwidthKbps),
+                max_user_download_bandwidth_kbps: bandwidthMBpsToKbps(draft.maxUserDownloadBandwidthKbps),
                 max_upload_file_mb: Number(draft.maxUploadFileMB || 0),
                 allow_registration: Boolean(draft.allowRegistration)
             }
@@ -1476,8 +1537,8 @@ async function handleAdminUserSubmit(form) {
             method: "PATCH",
             body: {
                 storage_quota_mb: Number(draft.storageQuotaMB || 0),
-                upload_bandwidth_kbps: Number(draft.uploadBandwidthKbps || 0),
-                download_bandwidth_kbps: Number(draft.downloadBandwidthKbps || 0),
+                upload_bandwidth_kbps: bandwidthMBpsToKbps(draft.uploadBandwidthKbps),
+                download_bandwidth_kbps: bandwidthMBpsToKbps(draft.downloadBandwidthKbps),
                 is_admin: Boolean(draft.isAdmin)
             }
         });
@@ -1623,10 +1684,10 @@ async function handleAdminBandwidthApprove(form) {
     try {
         const body = { review_note: reviewNote };
         if (approvedUploadKbps !== "") {
-            body.approved_upload_kbps = Number(approvedUploadKbps);
+            body.approved_upload_kbps = bandwidthMBpsToKbps(approvedUploadKbps);
         }
         if (approvedDownloadKbps !== "") {
-            body.approved_download_kbps = Number(approvedDownloadKbps);
+            body.approved_download_kbps = bandwidthMBpsToKbps(approvedDownloadKbps);
         }
 
         await request(`/v1/admin/bandwidth-requests/${encodeURIComponent(requestID)}/approve`, {
@@ -2532,10 +2593,10 @@ function createAdminSettingsDraft(settings) {
     return {
         maxUserCount: String(settings.max_user_count || ""),
         defaultStorageQuotaMB: String(bytesToMegabytes(settings.default_storage_quota_bytes)),
-        defaultUploadBandwidthKbps: String(settings.default_upload_bandwidth_kbps || ""),
-        defaultDownloadBandwidthKbps: String(settings.default_download_bandwidth_kbps || ""),
-        maxUserUploadBandwidthKbps: String(settings.max_user_upload_bandwidth_kbps || ""),
-        maxUserDownloadBandwidthKbps: String(settings.max_user_download_bandwidth_kbps || ""),
+        defaultUploadBandwidthKbps: bandwidthKbpsToMBpsInput(settings.default_upload_bandwidth_kbps),
+        defaultDownloadBandwidthKbps: bandwidthKbpsToMBpsInput(settings.default_download_bandwidth_kbps),
+        maxUserUploadBandwidthKbps: bandwidthKbpsToMBpsInput(settings.max_user_upload_bandwidth_kbps),
+        maxUserDownloadBandwidthKbps: bandwidthKbpsToMBpsInput(settings.max_user_download_bandwidth_kbps),
         maxUploadFileMB: String(bytesToMegabytes(settings.max_upload_file_bytes)),
         allowRegistration: Boolean(settings.allow_registration)
     };
@@ -2546,8 +2607,8 @@ function createAdminUserDrafts(users) {
     for (const user of Array.isArray(users) ? users : []) {
         drafts[user.id] = {
             storageQuotaMB: String(bytesToMegabytes(user.storage_quota_bytes)),
-            uploadBandwidthKbps: String(user.upload_bandwidth_kbps || ""),
-            downloadBandwidthKbps: String(user.download_bandwidth_kbps || ""),
+            uploadBandwidthKbps: bandwidthKbpsToMBpsInput(user.upload_bandwidth_kbps),
+            downloadBandwidthKbps: bandwidthKbpsToMBpsInput(user.download_bandwidth_kbps),
             isAdmin: Boolean(user.is_admin)
         };
     }
@@ -3175,7 +3236,7 @@ function parseRoute(hashValue) {
     }
 
     const route = rawRoute.toLowerCase();
-    if (PROTECTED_ROUTES.has(route) || route === AUTH_ROUTE) {
+    if (PROTECTED_ROUTES.has(route) || AUTH_ROUTES.has(route)) {
         return {
             route,
             publicShareToken: ""

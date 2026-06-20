@@ -6,6 +6,8 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_ROUTE = "history";
 export const AUTH_ROUTE = "login";
+export const REGISTER_ROUTE = "register";
+export const AUTH_ROUTES = new Set([AUTH_ROUTE, REGISTER_ROUTE]);
 
 export const NAV_ITEMS = [
     { route: "history", title: "历史", icon: "history", ready: true },

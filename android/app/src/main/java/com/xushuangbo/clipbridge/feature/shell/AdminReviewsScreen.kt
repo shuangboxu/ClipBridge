@@ -16,7 +16,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -234,10 +233,10 @@ private fun PendingBandwidthReviewCard(
     PendingReviewCard(
         title = request.username.ifBlank { request.userId },
         detailLines = listOf(
-            "当前上传：${formatShellKbps(request.currentUploadKbps)}",
-            "目标上传：${formatShellKbps(request.requestedUploadKbps)}",
-            "当前下载：${formatShellKbps(request.currentDownloadKbps)}",
-            "目标下载：${formatShellKbps(request.requestedDownloadKbps)}",
+            "当前上传：${formatShellBandwidth(request.currentUploadKbps)}",
+            "目标上传：${formatShellBandwidth(request.requestedUploadKbps)}",
+            "当前下载：${formatShellBandwidth(request.currentDownloadKbps)}",
+            "目标下载：${formatShellBandwidth(request.requestedDownloadKbps)}",
             "申请时间：${formatShellLocalDateTime(request.createdAt)}",
             "申请说明：${request.reason.ifBlank { "-" }}",
         ),
@@ -338,7 +337,7 @@ private fun ApprovalDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (dialogMode == AdminReviewDialogMode.Approve && reviewType == AdminReviewType.Quota) {
-                    OutlinedTextField(
+                    ShellFormTextField(
                         value = uiState.approvedQuotaMbDraft,
                         onValueChange = onApprovedQuotaMbDraftChange,
                         label = { Text("批准配额（MB，可调整）") },
@@ -349,25 +348,25 @@ private fun ApprovalDialog(
                 }
 
                 if (dialogMode == AdminReviewDialogMode.Approve && reviewType == AdminReviewType.Bandwidth) {
-                    OutlinedTextField(
+                    ShellFormTextField(
                         value = uiState.approvedUploadKbpsDraft,
                         onValueChange = onApprovedUploadDraftChange,
-                        label = { Text("批准上传（Kbps，可调整）") },
+                        label = { Text("批准上传（MB/s，可调整）") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    ShellFormTextField(
                         value = uiState.approvedDownloadKbpsDraft,
                         onValueChange = onApprovedDownloadDraftChange,
-                        label = { Text("批准下载（Kbps，可调整）") },
+                        label = { Text("批准下载（MB/s，可调整）") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
 
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.reviewNoteDraft,
                     onValueChange = onReviewNoteDraftChange,
                     label = { Text("审核备注") },

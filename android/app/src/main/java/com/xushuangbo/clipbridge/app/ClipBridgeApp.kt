@@ -23,6 +23,7 @@ import com.xushuangbo.clipbridge.feature.shell.AdminReviewsViewModel
 import com.xushuangbo.clipbridge.feature.shell.AdminSettingsViewModel
 import com.xushuangbo.clipbridge.feature.shell.AdminUsersViewModel
 import com.xushuangbo.clipbridge.feature.shell.RequestsViewModel
+import com.xushuangbo.clipbridge.feature.shell.ScanShareViewModel
 import com.xushuangbo.clipbridge.feature.shell.SharesViewModel
 import com.xushuangbo.clipbridge.feature.shell.SettingsViewModel
 
@@ -182,7 +183,8 @@ fun ClipBridgeApp(
          * 路由三：Main 主界面
          *
          * MainShellRoute 通常包含底部导航：
-         * 首页 / 历史 / AI / 设置
+         * 首页 / 历史 / 设置
+         * AI 页面代码先保留，但当前版本不在底栏展示
          *
          * 这里同时创建 SettingsViewModel 和 DeviceViewModel，
          * 因为设置页和设备页属于主界面内部的功能。
@@ -243,6 +245,13 @@ fun ClipBridgeApp(
                 ),
             )
 
+            val scanShareViewModel: ScanShareViewModel = viewModel(
+                factory = ScanShareViewModel.factory(
+                    sessionStore = resolvedContainer.sessionStore,
+                    publicShareApiClient = resolvedContainer.publicShareApiClient,
+                ),
+            )
+
             val requestsViewModel: RequestsViewModel = viewModel(
                 factory = RequestsViewModel.factory(
                     sessionStore = resolvedContainer.sessionStore,
@@ -282,6 +291,7 @@ fun ClipBridgeApp(
                 historySettingsViewModel = historySettingsViewModel,
                 filesViewModel = filesViewModel,
                 sharesViewModel = sharesViewModel,
+                scanShareViewModel = scanShareViewModel,
                 requestsViewModel = requestsViewModel,
                 adminSettingsViewModel = adminSettingsViewModel,
                 adminUsersViewModel = adminUsersViewModel,

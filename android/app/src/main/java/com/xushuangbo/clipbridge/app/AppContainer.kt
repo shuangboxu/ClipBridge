@@ -11,8 +11,10 @@ import com.xushuangbo.clipbridge.core.network.HttpAdminApiClient
 import com.xushuangbo.clipbridge.core.network.HttpAuthApiClient
 import com.xushuangbo.clipbridge.core.network.HttpClipboardApiClient
 import com.xushuangbo.clipbridge.core.network.HttpFileApiClient
+import com.xushuangbo.clipbridge.core.network.HttpPublicShareApiClient
 import com.xushuangbo.clipbridge.core.network.HttpRequestApiClient
 import com.xushuangbo.clipbridge.core.network.HttpShareApiClient
+import com.xushuangbo.clipbridge.core.network.PublicShareApiClient
 import com.xushuangbo.clipbridge.core.network.RequestApiClient
 import com.xushuangbo.clipbridge.core.network.ShareApiClient
 import com.xushuangbo.clipbridge.core.share.PreferenceShareRulesStore
@@ -32,6 +34,7 @@ class AppContainer(
     val clipboardApiClient: ClipboardApiClient,
     val fileApiClient: FileApiClient,
     val shareApiClient: ShareApiClient,
+    val publicShareApiClient: PublicShareApiClient,
     val clipboardSyncCoordinator: ClipboardSyncCoordinator,
     val fileTransferCoordinator: FileTransferCoordinator,
     val shareCoordinator: ShareCoordinator,
@@ -56,6 +59,7 @@ class AppContainer(
             val clipboardApiClient = HttpClipboardApiClient(authApiClient = authApiClient)
             val fileApiClient = HttpFileApiClient(authApiClient = authApiClient)
             val shareApiClient = HttpShareApiClient(authApiClient = authApiClient)
+            val publicShareApiClient = HttpPublicShareApiClient()
             val documentFileGateway = AndroidDocumentFileGateway(appContext)
 
             return AppContainer(
@@ -66,6 +70,7 @@ class AppContainer(
                 clipboardApiClient = clipboardApiClient,
                 fileApiClient = fileApiClient,
                 shareApiClient = shareApiClient,
+                publicShareApiClient = publicShareApiClient,
                 clipboardSyncCoordinator = ClipboardSyncCoordinator(
                     sessionStore = sessionStore,
                     clipboardApiClient = clipboardApiClient,

@@ -32,7 +32,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -515,7 +514,7 @@ private fun DeviceEditDialog(
                 )
                 Spacer(modifier = Modifier.height(18.dp))
 
-                OutlinedTextField(
+                ShellFormTextField(
                     value = draftName,
                     onValueChange = onDraftNameChange,
                     singleLine = true,

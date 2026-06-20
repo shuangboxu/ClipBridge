@@ -116,8 +116,8 @@ class RequestsViewModelTest {
             ),
         )
 
-        viewModel.updateBandwidthUploadDraft("4096")
-        viewModel.updateBandwidthDownloadDraft("8192")
+        viewModel.updateBandwidthUploadDraft("4")
+        viewModel.updateBandwidthDownloadDraft("8")
         viewModel.submitBandwidthRequest()
         advanceUntilIdle()
 

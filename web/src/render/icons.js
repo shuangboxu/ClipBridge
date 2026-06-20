@@ -143,6 +143,20 @@ export function renderIcon(name) {
                 <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
             </svg>
         `,
+        qr: `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 4h6v6H4z"></path>
+                <path d="M14 4h6v6h-6z"></path>
+                <path d="M4 14h6v6H4z"></path>
+                <path d="M15 15h1"></path>
+                <path d="M18 14v3"></path>
+                <path d="M14 18h3"></path>
+                <path d="M18 18h2v2h-2z"></path>
+                <path d="M8 8V6H6"></path>
+                <path d="M18 8V6h-2"></path>
+                <path d="M8 18v-2H6"></path>
+            </svg>
+        `,
         trash: `
             <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 7h16"></path>

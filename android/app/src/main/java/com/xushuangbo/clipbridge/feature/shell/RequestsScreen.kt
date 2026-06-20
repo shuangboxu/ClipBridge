@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -108,7 +107,7 @@ fun RequestsScreen(
                 title = "存储配额申请",
                 description = "输入希望提升到的目标配额，单位是 MB。",
             ) {
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.quotaDraftMb,
                     onValueChange = onQuotaDraftMbChange,
                     label = { Text("目标配额（MB）") },
@@ -117,7 +116,7 @@ fun RequestsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.size(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.quotaReasonDraft,
                     onValueChange = onQuotaReasonChange,
                     label = { Text("申请说明") },
@@ -138,27 +137,27 @@ fun RequestsScreen(
         item {
             RequestFormCard(
                 title = "带宽申请",
-                description = "上传和下载都按 Kbps 填写，至少填一个高于当前值的目标更合理。",
+                description = "上传和下载都按 MB/s 填写，至少填一个高于当前值的目标更合理。",
             ) {
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.bandwidthUploadDraft,
                     onValueChange = onBandwidthUploadChange,
-                    label = { Text("上传带宽（Kbps）") },
+                    label = { Text("上传带宽（MB/s）") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.size(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.bandwidthDownloadDraft,
                     onValueChange = onBandwidthDownloadChange,
-                    label = { Text("下载带宽（Kbps）") },
+                    label = { Text("下载带宽（MB/s）") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.size(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.bandwidthReasonDraft,
                     onValueChange = onBandwidthReasonChange,
                     label = { Text("申请说明") },
@@ -181,7 +180,7 @@ fun RequestsScreen(
                 title = "管理员申请",
                 description = "说明为什么需要管理员权限，以及主要会做哪些管理操作。",
             ) {
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.adminReasonDraft,
                     onValueChange = onAdminReasonChange,
                     label = { Text("申请说明") },
@@ -271,8 +270,8 @@ private fun RequestOverviewCard(
         "存储配额" to formatShellBytes(uiState.storageQuotaBytes),
         "已用空间" to formatShellBytes(uiState.storageUsedBytes),
         "剩余空间" to formatShellBytes(uiState.storageFreeBytes),
-        "上传带宽" to formatShellKbps(uiState.uploadBandwidthKbps),
-        "下载带宽" to formatShellKbps(uiState.downloadBandwidthKbps),
+        "上传带宽" to formatShellBandwidth(uiState.uploadBandwidthKbps),
+        "下载带宽" to formatShellBandwidth(uiState.downloadBandwidthKbps),
         "单文件上限" to formatShellBytes(uiState.maxUploadFileBytes),
     )
 
@@ -398,10 +397,10 @@ private fun BandwidthRequestRecordCard(request: BandwidthRequestRecord) {
         title = request.username.ifBlank { "未命名用户" },
         status = request.status,
     ) {
-        SummaryRow("当前上传", formatShellKbps(request.currentUploadKbps))
-        SummaryRow("目标上传", formatShellKbps(request.requestedUploadKbps))
-        SummaryRow("当前下载", formatShellKbps(request.currentDownloadKbps))
-        SummaryRow("目标下载", formatShellKbps(request.requestedDownloadKbps))
+        SummaryRow("当前上传", formatShellBandwidth(request.currentUploadKbps))
+        SummaryRow("目标上传", formatShellBandwidth(request.requestedUploadKbps))
+        SummaryRow("当前下载", formatShellBandwidth(request.currentDownloadKbps))
+        SummaryRow("目标下载", formatShellBandwidth(request.requestedDownloadKbps))
         RequestNoteRow("申请说明", request.reason)
         SummaryRow("审核人", request.reviewedByUsername.ifBlank { "-" })
         RequestNoteRow("审核备注", request.reviewNote)

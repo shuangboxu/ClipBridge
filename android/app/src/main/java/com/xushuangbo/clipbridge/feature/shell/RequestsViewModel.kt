@@ -175,12 +175,12 @@ class RequestsViewModel(
     fun submitBandwidthRequest() {
         val currentSession = requireSession() ?: return
         val currentState = _uiState.value
-        val requestedUpload = currentState.bandwidthUploadDraft.trim().toIntOrNull()
-        val requestedDownload = currentState.bandwidthDownloadDraft.trim().toIntOrNull()
+        val requestedUpload = bandwidthMbDraftToKbpsOrNull(currentState.bandwidthUploadDraft)
+        val requestedDownload = bandwidthMbDraftToKbpsOrNull(currentState.bandwidthDownloadDraft)
 
         val validationMessage = when {
-            requestedUpload == null || requestedUpload <= 0 -> "上传带宽必须是大于 0 的整数 Kbps"
-            requestedDownload == null || requestedDownload <= 0 -> "下载带宽必须是大于 0 的整数 Kbps"
+            requestedUpload == null -> "上传带宽必须是大于 0 的数字 MB/s"
+            requestedDownload == null -> "下载带宽必须是大于 0 的数字 MB/s"
             currentState.bandwidthReasonDraft.length > 500 -> "申请说明不能超过 500 个字符"
             else -> null
         }

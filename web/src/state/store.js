@@ -7,10 +7,8 @@ export const state = {
     session: loadSession(),
     sidebarCollapsed: loadSidebarCollapsed(),
     mobileSidebarOpen: false,
-    authForm: {
-        username: "",
-        password: ""
-    },
+    authForm: createInitialAuthForm(),
+    authRegistrationPolicy: createInitialAuthRegistrationPolicy(),
     profile: null,
     devices: [],
     files: createInitialFilesState(),
@@ -40,6 +38,7 @@ export const state = {
 
 export function setSession(session) {
     state.session = session;
+    state.authRegistrationPolicy = createInitialAuthRegistrationPolicy();
     state.profile = null;
     state.files = createInitialFilesState();
     closeFilePanel();
@@ -97,6 +96,7 @@ export function updateSessionUser(user) {
 
 export function clearSession() {
     state.session = null;
+    state.authRegistrationPolicy = createInitialAuthRegistrationPolicy();
     state.files = createInitialFilesState();
     closeFilePanel();
     state.shares = createInitialSharesState();
@@ -168,6 +168,25 @@ export function closeSharePanel() {
         ...state.shares,
         panelOpen: false,
         dragActive: false
+    };
+}
+
+export function openShareQRCodeDialog(shareToken) {
+    const normalizedToken = String(shareToken || "").trim();
+    if (!normalizedToken) {
+        return;
+    }
+
+    state.shares = {
+        ...state.shares,
+        qrCodeDialogToken: normalizedToken
+    };
+}
+
+export function closeShareQRCodeDialog() {
+    state.shares = {
+        ...state.shares,
+        qrCodeDialogToken: ""
     };
 }
 
@@ -294,6 +313,20 @@ function loadSidebarCollapsed() {
     return localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === "1";
 }
 
+function createInitialAuthForm() {
+    return {
+        username: "",
+        password: "",
+        confirmPassword: ""
+    };
+}
+
+function createInitialAuthRegistrationPolicy() {
+    return {
+        allowRegistration: null
+    };
+}
+
 function createInitialClipboardState() {
     return {
         draftText: "",
@@ -335,6 +368,7 @@ function createInitialSharesState() {
         selectedFiles: [],
         dragActive: false,
         panelOpen: false,
+        qrCodeDialogToken: "",
         strategyKey: "expire",
         password: "",
         items: [],
@@ -355,6 +389,7 @@ function createInitialRequestsState() {
             reason: ""
         },
         bandwidthForm: {
+            // 中文注释：这里虽然沿用旧字段名，但表单里实际保存的是 MB/s 文本，提交前会再换回接口字段。
             requestedUploadKbps: "",
             requestedDownloadKbps: "",
             reason: ""
@@ -376,6 +411,7 @@ function createInitialAdminState() {
         settingsForm: {
             maxUserCount: "",
             defaultStorageQuotaMB: "",
+            // 中文注释：这里继续保留旧键名，避免影响其它逻辑；值本身已经统一改成 MB/s。
             defaultUploadBandwidthKbps: "",
             defaultDownloadBandwidthKbps: "",
             maxUserUploadBandwidthKbps: "",

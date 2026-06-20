@@ -1,4 +1,4 @@
-import { AUTH_ROUTE, NAV_ITEMS, PROTECTED_ROUTES, getRouteMeta } from "../config/app.js";
+import { AUTH_ROUTE, NAV_ITEMS, PROTECTED_ROUTES, REGISTER_ROUTE, getRouteMeta } from "../config/app.js";
 import { state, isPending } from "../state/store.js";
 import { createDefaultDeviceName, isMobileViewport } from "../utils/browser.js";
 import { escapeAttribute, escapeHTML } from "../utils/format.js";
@@ -80,10 +80,12 @@ function writeElementScroll(appRoot, selector, value) {
 }
 
 function renderAuthLayout() {
-    const submitLabel = "登录";
-    const submitLoadingLabel = "正在登录...";
+    const isRegisterMode = state.route === REGISTER_ROUTE;
+    const submitLabel = isRegisterMode ? "注册并进入" : "登录";
+    const submitLoadingLabel = isRegisterMode ? "正在创建账号..." : "正在登录...";
     const authToast = renderToast(state.pageMessage);
     const authError = renderErrorMessage(state.pageError);
+    const authPolicyMessage = renderAuthPolicyMessage(isRegisterMode);
 
     return `
         <main class="page-shell auth-stage">
@@ -93,15 +95,36 @@ function renderAuthLayout() {
                     <img src="./assets/brand/app-icon.png" alt="ClipBridge">
                     <div>
                         <p class="brand-title brand-title-dark">ClipBridge</p>
-                        <p class="brand-subtitle brand-subtitle-dark">Web 登录</p>
+                        <p class="brand-subtitle brand-subtitle-dark">${isRegisterMode ? "Web 注册" : "Web 登录"}</p>
                     </div>
                 </div>
 
                 <div class="panel-card auth-card">
                     <div class="auth-card-intro">
-                        <h1>登录</h1>
+                        <h1>${isRegisterMode ? "注册" : "登录"}</h1>
                         <p class="panel-lead">设备自动识别：<code>${escapeHTML(createDefaultDeviceName())}</code></p>
                     </div>
+
+                    <div class="auth-tabs" role="tablist" aria-label="登录与注册">
+                        <button
+                            type="button"
+                            class="tab-button ${!isRegisterMode ? "is-active" : ""}"
+                            data-action="navigate"
+                            data-route="${AUTH_ROUTE}"
+                        >
+                            登录
+                        </button>
+                        <button
+                            type="button"
+                            class="tab-button ${isRegisterMode ? "is-active" : ""}"
+                            data-action="navigate"
+                            data-route="${REGISTER_ROUTE}"
+                        >
+                            注册
+                        </button>
+                    </div>
+
+                    ${authPolicyMessage}
 
                     <form id="auth-form" class="form-grid">
                         <div class="field">
@@ -111,8 +134,15 @@ function renderAuthLayout() {
 
                         <div class="field">
                             <label for="password">密码</label>
-                            <input id="password" name="password" type="password" minlength="8" maxlength="128" autocomplete="current-password" value="${escapeAttribute(state.authForm.password)}" required>
+                            <input id="password" name="password" type="password" minlength="8" maxlength="128" autocomplete="${isRegisterMode ? "new-password" : "current-password"}" value="${escapeAttribute(state.authForm.password)}" required>
                         </div>
+
+                        ${isRegisterMode ? `
+                            <div class="field">
+                                <label for="confirm-password">确认密码</label>
+                                <input id="confirm-password" name="confirm_password" type="password" minlength="8" maxlength="128" autocomplete="new-password" value="${escapeAttribute(state.authForm.confirmPassword)}" required>
+                            </div>
+                        ` : ""}
 
                         <div class="actions">
                             <button type="submit" class="button-primary" ${isPending("auth") ? "disabled" : ""}>
@@ -126,6 +156,17 @@ function renderAuthLayout() {
             </section>
         </main>
     `;
+}
+
+function renderAuthPolicyMessage(isRegisterMode) {
+    const allowRegistration = state.authRegistrationPolicy?.allowRegistration;
+    if (allowRegistration === true && !isRegisterMode) {
+        return `<p class="panel-lead">当前服务已开放公开注册，可直接切换到“注册”创建账号。</p>`;
+    }
+    if (allowRegistration === false && isRegisterMode) {
+        return `<p class="panel-lead">当前服务可能已关闭公开注册；如果提交后返回 403，需要由管理员开放注册。</p>`;
+    }
+    return "";
 }
 
 function renderProtectedLayout() {

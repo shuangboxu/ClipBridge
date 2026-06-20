@@ -72,6 +72,10 @@ type tokenData struct {
 	RefreshTokenExpiresAt string `json:"refresh_token_expires_at"`
 }
 
+type registrationPolicyData struct {
+	AllowRegistration bool `json:"allow_registration"`
+}
+
 func NewAuthHandler(application *app.App) *AuthHandler {
 	if application == nil {
 		return &AuthHandler{}
@@ -86,15 +90,23 @@ func NewAuthHandler(application *app.App) *AuthHandler {
 	return handler
 }
 
+func (h *AuthHandler) GetRegistrationPolicy(w http.ResponseWriter, r *http.Request) {
+	allowRegistration, err := h.resolveAllowRegistration(r.Context())
+	if err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "query registration policy failed")
+		return
+	}
+
+	response.OK(w, r, registrationPolicyData{
+		AllowRegistration: allowRegistration,
+	})
+}
+
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	allowRegistration := h.allowRegistration
-	if h.adminService != nil {
-		allowed, err := h.adminService.RegistrationAllowed(r.Context())
-		if err != nil {
-			response.Error(w, r, http.StatusInternalServerError, "query registration policy failed")
-			return
-		}
-		allowRegistration = allowed
+	allowRegistration, err := h.resolveAllowRegistration(r.Context())
+	if err != nil {
+		response.Error(w, r, http.StatusInternalServerError, "query registration policy failed")
+		return
 	}
 
 	// 当前项目默认不开放公开注册。
@@ -123,6 +135,21 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.Created(w, r, buildSessionResponse(session))
+}
+
+func (h *AuthHandler) resolveAllowRegistration(ctx context.Context) (bool, error) {
+	allowRegistration := h.allowRegistration
+	if h.adminService == nil {
+		return allowRegistration, nil
+	}
+
+	// 中文注释：管理员可以在线修改“允许注册”开关。
+	// 这里每次都优先读取系统设置，避免还停留在进程启动时的旧配置值。
+	allowed, err := h.adminService.RegistrationAllowed(ctx)
+	if err != nil {
+		return false, err
+	}
+	return allowed, nil
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {

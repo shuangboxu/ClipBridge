@@ -55,6 +55,41 @@ export function formatBytes(value) {
     return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
+const BANDWIDTH_BASE = 1024;
+
+function trimTrailingZeros(value) {
+    return value.replace(/\.?0+$/, "");
+}
+
+export function formatBandwidthMBps(value) {
+    const normalized = Number(value || 0);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+        return "-";
+    }
+
+    return `${trimTrailingZeros((normalized / BANDWIDTH_BASE).toFixed(3))} MB/s`;
+}
+
+export function bandwidthKbpsToMBpsInput(value) {
+    const normalized = Number(value || 0);
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+        return "";
+    }
+
+    return trimTrailingZeros((normalized / BANDWIDTH_BASE).toFixed(3));
+}
+
+export function bandwidthMBpsToKbps(value) {
+    const normalized = Number(String(value ?? "").trim());
+    if (!Number.isFinite(normalized) || normalized <= 0) {
+        return 0;
+    }
+
+    // 中文注释：后端字段名虽然仍然叫 kbps，但历史实现一直按 KB/s 使用。
+    // 这里统一把界面上的 MB/s 换算回旧字段，避免改动接口协议。
+    return Math.max(Math.round(normalized * BANDWIDTH_BASE), 0);
+}
+
 export function toUserMessage(error) {
     if (!error) {
         return "请求失败，请稍后重试。";

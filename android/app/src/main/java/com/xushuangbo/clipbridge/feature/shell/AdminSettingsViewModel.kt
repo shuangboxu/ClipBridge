@@ -137,15 +137,37 @@ class AdminSettingsViewModel(
             }
 
             try {
+                val defaultUploadBandwidth = bandwidthMbDraftToKbpsOrNull(currentState.defaultUploadBandwidthKbpsDraft)
+                val defaultDownloadBandwidth = bandwidthMbDraftToKbpsOrNull(currentState.defaultDownloadBandwidthKbpsDraft)
+                val maxUserUploadBandwidth = bandwidthMbDraftToKbpsOrNull(currentState.maxUserUploadBandwidthKbpsDraft)
+                val maxUserDownloadBandwidth = bandwidthMbDraftToKbpsOrNull(currentState.maxUserDownloadBandwidthKbpsDraft)
+
+                if (defaultUploadBandwidth == null) {
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "默认上传带宽必须是大于 0 的数字 MB/s") }
+                    return@launch
+                }
+                if (defaultDownloadBandwidth == null) {
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "默认下载带宽必须是大于 0 的数字 MB/s") }
+                    return@launch
+                }
+                if (maxUserUploadBandwidth == null) {
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "用户上传上限必须是大于 0 的数字 MB/s") }
+                    return@launch
+                }
+                if (maxUserDownloadBandwidth == null) {
+                    _uiState.update { it.copy(isSaving = false, errorMessage = "用户下载上限必须是大于 0 的数字 MB/s") }
+                    return@launch
+                }
+
                 val result = adminApiClient.updateSettings(
                     session = currentSession,
                     input = UpdateAdminSettingsInput(
                         maxUserCount = currentState.maxUserCountDraft.trim().toInt(),
                         defaultStorageQuotaMb = currentState.defaultStorageQuotaMbDraft.trim().toLong(),
-                        defaultUploadBandwidthKbps = currentState.defaultUploadBandwidthKbpsDraft.trim().toInt(),
-                        defaultDownloadBandwidthKbps = currentState.defaultDownloadBandwidthKbpsDraft.trim().toInt(),
-                        maxUserUploadBandwidthKbps = currentState.maxUserUploadBandwidthKbpsDraft.trim().toInt(),
-                        maxUserDownloadBandwidthKbps = currentState.maxUserDownloadBandwidthKbpsDraft.trim().toInt(),
+                        defaultUploadBandwidthKbps = defaultUploadBandwidth,
+                        defaultDownloadBandwidthKbps = defaultDownloadBandwidth,
+                        maxUserUploadBandwidthKbps = maxUserUploadBandwidth,
+                        maxUserDownloadBandwidthKbps = maxUserDownloadBandwidth,
                         maxUploadFileMb = currentState.maxUploadFileMbDraft.trim().toLong(),
                         allowRegistration = currentState.allowRegistration,
                     ),
@@ -216,10 +238,10 @@ class AdminSettingsViewModel(
             it.copy(
                 maxUserCountDraft = settings.maxUserCount.toString(),
                 defaultStorageQuotaMbDraft = (settings.defaultStorageQuotaBytes / MB).toString(),
-                defaultUploadBandwidthKbpsDraft = settings.defaultUploadBandwidthKbps.toString(),
-                defaultDownloadBandwidthKbpsDraft = settings.defaultDownloadBandwidthKbps.toString(),
-                maxUserUploadBandwidthKbpsDraft = settings.maxUserUploadBandwidthKbps.toString(),
-                maxUserDownloadBandwidthKbpsDraft = settings.maxUserDownloadBandwidthKbps.toString(),
+                defaultUploadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(settings.defaultUploadBandwidthKbps),
+                defaultDownloadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(settings.defaultDownloadBandwidthKbps),
+                maxUserUploadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(settings.maxUserUploadBandwidthKbps),
+                maxUserDownloadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(settings.maxUserDownloadBandwidthKbps),
                 maxUploadFileMbDraft = (settings.maxUploadFileBytes / MB).toString(),
                 allowRegistration = settings.allowRegistration,
                 currentUserCount = currentUserCount,
@@ -233,15 +255,23 @@ class AdminSettingsViewModel(
     private fun validateDrafts(state: AdminSettingsUiState): String? {
         val requiredPositiveIntFields = listOf(
             "最大用户数" to state.maxUserCountDraft.trim().toIntOrNull(),
-            "默认上传带宽" to state.defaultUploadBandwidthKbpsDraft.trim().toIntOrNull(),
-            "默认下载带宽" to state.defaultDownloadBandwidthKbpsDraft.trim().toIntOrNull(),
-            "用户上传上限" to state.maxUserUploadBandwidthKbpsDraft.trim().toIntOrNull(),
-            "用户下载上限" to state.maxUserDownloadBandwidthKbpsDraft.trim().toIntOrNull(),
         )
         requiredPositiveIntFields.forEach { entry ->
             val value = entry.second
             if (value == null || value <= 0) {
                 return "${entry.first}必须是大于 0 的整数"
+            }
+        }
+
+        val requiredBandwidthFields = listOf(
+            "默认上传带宽" to bandwidthMbDraftToKbpsOrNull(state.defaultUploadBandwidthKbpsDraft),
+            "默认下载带宽" to bandwidthMbDraftToKbpsOrNull(state.defaultDownloadBandwidthKbpsDraft),
+            "用户上传上限" to bandwidthMbDraftToKbpsOrNull(state.maxUserUploadBandwidthKbpsDraft),
+            "用户下载上限" to bandwidthMbDraftToKbpsOrNull(state.maxUserDownloadBandwidthKbpsDraft),
+        )
+        requiredBandwidthFields.forEach { entry ->
+            if (entry.second == null) {
+                return "${entry.first}必须是大于 0 的数字 MB/s"
             }
         }
 

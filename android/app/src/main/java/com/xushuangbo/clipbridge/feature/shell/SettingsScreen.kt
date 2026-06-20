@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -129,9 +128,9 @@ internal fun AccountInfoScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
                 InfoRow("存储配额", formatShellBytes(uiState.storageQuotaBytes))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
-                InfoRow("上传带宽", formatShellKbps(uiState.uploadBandwidthKbps))
+                InfoRow("上传带宽", formatShellBandwidth(uiState.uploadBandwidthKbps))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
-                InfoRow("下载带宽", formatShellKbps(uiState.downloadBandwidthKbps))
+                InfoRow("下载带宽", formatShellBandwidth(uiState.downloadBandwidthKbps))
             }
         }
 
@@ -141,7 +140,7 @@ internal fun AccountInfoScreen(
             Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
                 Text(text = "服务器地址", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.serviceAddress,
                     onValueChange = onServiceAddressChange,
                     singleLine = true,
@@ -186,7 +185,7 @@ internal fun SecurityScreen(
             Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
                 Text(text = "修改密码", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.currentPassword,
                     onValueChange = onCurrentPasswordChange,
                     singleLine = true,
@@ -195,7 +194,7 @@ internal fun SecurityScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.newPassword,
                     onValueChange = onNewPasswordChange,
                     singleLine = true,
@@ -204,7 +203,7 @@ internal fun SecurityScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.confirmNewPassword,
                     onValueChange = onConfirmNewPasswordChange,
                     singleLine = true,

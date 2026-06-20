@@ -27,6 +27,7 @@ func New(application *app.App) http.Handler {
 	router := newSimpleRouter()
 	router.Handle(http.MethodGet, "/healthz", http.HandlerFunc(healthHandler.Get))
 
+	router.Handle(http.MethodGet, "/v1/auth/registration-policy", http.HandlerFunc(authHandler.GetRegistrationPolicy))
 	router.Handle(http.MethodPost, "/v1/auth/register", http.HandlerFunc(authHandler.Register))
 	router.Handle(http.MethodPost, "/v1/auth/login", http.HandlerFunc(authHandler.Login))
 	router.Handle(http.MethodPost, "/v1/auth/refresh", http.HandlerFunc(authHandler.Refresh))
@@ -164,6 +165,7 @@ func New(application *app.App) http.Handler {
 	router.Handle(http.MethodPost, "/v1/shares/file", protectedCreateFileShare)
 	router.Handle(http.MethodGet, "/v1/shares", protectedListShares)
 	router.Handle(http.MethodPost, "/v1/shares/:id/revoke", protectedRevokeShare)
+	router.Handle(http.MethodGet, "/v1/public/qrcode", http.HandlerFunc(shareHandler.PublicQRCode))
 	router.Handle(http.MethodGet, "/v1/public/shares/:token/meta", http.HandlerFunc(shareHandler.PublicMeta))
 	router.Handle(http.MethodPost, "/v1/public/shares/:token/open", http.HandlerFunc(shareHandler.PublicOpen))
 	router.Handle(http.MethodPost, "/v1/public/shares/:token/content", http.HandlerFunc(shareHandler.PublicContent))

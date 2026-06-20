@@ -12,7 +12,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -112,7 +111,7 @@ private fun HistorySettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(14.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.retentionDaysInput,
                     onValueChange = onRetentionDaysChange,
                     singleLine = true,
@@ -122,7 +121,7 @@ private fun HistorySettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
+                ShellFormTextField(
                     value = uiState.historyLimitInput,
                     onValueChange = onHistoryLimitChange,
                     singleLine = true,

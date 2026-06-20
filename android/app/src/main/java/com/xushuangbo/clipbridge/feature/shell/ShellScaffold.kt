@@ -1,7 +1,6 @@
 package com.xushuangbo.clipbridge.feature.shell
 
 import android.widget.Toast
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -9,11 +8,10 @@ import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,10 +55,11 @@ internal enum class MainTab(
     val title: String,
     val label: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val visibleInBottomBar: Boolean = true,
 ) {
     Home("首页", "首页", Icons.Outlined.Home),
     History("历史", "历史", Icons.Outlined.Description),
-    Ai("AI", "AI", Icons.Outlined.AutoAwesome),
+    Ai("AI", "AI", Icons.Outlined.AutoAwesome, visibleInBottomBar = false),
     Settings("设置", "设置", Icons.Outlined.Settings),
 }
 
@@ -88,6 +87,7 @@ internal fun ShellScaffold(
     historySettingsViewModel: HistorySettingsViewModel,
     filesViewModel: FilesViewModel,
     sharesViewModel: SharesViewModel,
+    scanShareViewModel: ScanShareViewModel,
     requestsViewModel: RequestsViewModel,
     adminSettingsViewModel: AdminSettingsViewModel,
     adminUsersViewModel: AdminUsersViewModel,
@@ -113,7 +113,6 @@ internal fun ShellScaffold(
 ) {
     var currentTab by rememberSaveable { mutableStateOf(MainTab.Home) }
     var currentDetailPage by rememberSaveable { mutableStateOf<DetailPage?>(null) }
-    var homeMenuExpanded by rememberSaveable { mutableStateOf(false) }
     var historySearchQuery by rememberSaveable { mutableStateOf("") }
     var historyUploadDialogVisible by rememberSaveable { mutableStateOf(false) }
     var filesUploadRequestVersion by rememberSaveable { mutableStateOf(0) }
@@ -121,6 +120,16 @@ internal fun ShellScaffold(
     var pendingHistoryShortcutAction by remember { mutableStateOf<HistoryShortcutAction?>(null) }
     val sharesUiState by sharesViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val visibleMainTabs = remember { MainTab.entries.filter { it.visibleInBottomBar } }
+
+    // AI 页暂时不对外展示。
+    // 如果系统恢复了旧的底栏状态，导致 currentTab 还停留在 AI，
+    // 这里统一把它拉回首页，避免用户进入一个已经隐藏但无法切换出来的页面。
+    LaunchedEffect(currentTab, currentDetailPage) {
+        if (currentDetailPage == null && !currentTab.visibleInBottomBar) {
+            currentTab = MainTab.Home
+        }
+    }
 
     // 主页面的快捷入口只负责把用户送到正确页面，具体业务仍然由对应页面处理。
     val homeShortcuts = listOf(
@@ -165,30 +174,11 @@ internal fun ShellScaffold(
                 },
                 actions = {
                     if (currentDetailPage == null && currentTab == MainTab.Home) {
-                        Box {
-                            IconButton(onClick = { homeMenuExpanded = true }) {
-                                Text(text = "+")
-                            }
-
-                            DropdownMenu(
-                                expanded = homeMenuExpanded,
-                                onDismissRequest = { homeMenuExpanded = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("扫一扫") },
-                                    onClick = {
-                                        homeMenuExpanded = false
-                                        openDetailPage(DetailPage.Scan)
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("分享") },
-                                    onClick = {
-                                        homeMenuExpanded = false
-                                        openDetailPage(DetailPage.Share)
-                                    },
-                                )
-                            }
+                        IconButton(onClick = { openDetailPage(DetailPage.Scan) }) {
+                            Icon(
+                                imageVector = Icons.Outlined.QrCodeScanner,
+                                contentDescription = "扫一扫",
+                            )
                         }
                     } else if (currentDetailPage == null && currentTab == MainTab.History) {
                         IconButton(
@@ -274,7 +264,7 @@ internal fun ShellScaffold(
         },
         bottomBar = {
             NavigationBar {
-                MainTab.entries.forEach { tab ->
+                visibleMainTabs.forEach { tab ->
                     NavigationBarItem(
                         selected = currentDetailPage == null && currentTab == tab,
                         onClick = {
@@ -294,7 +284,10 @@ internal fun ShellScaffold(
                 viewModel = filesViewModel,
                 uploadRequestVersion = filesUploadRequestVersion,
             )
-            DetailPage.Scan -> ScanScreen(innerPadding = innerPadding)
+            DetailPage.Scan -> ScanScreenRoute(
+                innerPadding = innerPadding,
+                viewModel = scanShareViewModel,
+            )
             DetailPage.Share -> ShareScreenRoute(
                 innerPadding = innerPadding,
                 viewModel = sharesViewModel,

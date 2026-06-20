@@ -1,6 +1,13 @@
 import { NAV_ITEMS } from "../config/app.js";
 import { state, isPending } from "../state/store.js";
-import { escapeAttribute, escapeHTML, formatBytes, formatDateTime } from "../utils/format.js";
+import {
+    bandwidthKbpsToMBpsInput,
+    escapeAttribute,
+    escapeHTML,
+    formatBandwidthMBps,
+    formatBytes,
+    formatDateTime
+} from "../utils/format.js";
 import { renderDataRow, renderErrorMessage, renderModuleTile } from "./common.js";
 import { renderIcon } from "./icons.js";
 
@@ -292,11 +299,11 @@ function renderRequestsPage() {
                 </div>
                 <div class="device-stat">
                     <span>上传带宽</span>
-                    <strong>${formatKbps(user.upload_bandwidth_kbps)}</strong>
+                    <strong>${formatBandwidthMBps(user.upload_bandwidth_kbps)}</strong>
                 </div>
                 <div class="device-stat">
                     <span>下载带宽</span>
-                    <strong>${formatKbps(user.download_bandwidth_kbps)}</strong>
+                    <strong>${formatBandwidthMBps(user.download_bandwidth_kbps)}</strong>
                 </div>
                 <div class="device-stat">
                     <span>系统单文件上限</span>
@@ -352,33 +359,33 @@ function renderRequestsPage() {
                 <div class="card-header">
                     <div>
                         <h3>带宽申请</h3>
-                        <p class="muted">上传和下载至少有一项需要大于当前值，单位为 Kbps。</p>
+                        <p class="muted">上传和下载至少有一项需要大于当前值，单位为 MB/s。</p>
                     </div>
                 </div>
 
                 <form id="bandwidth-request-form" class="form-grid">
                     <div class="inline-fields">
                         <div class="field">
-                            <label for="request-upload-kbps">上传带宽（Kbps）</label>
+                            <label for="request-upload-kbps">上传带宽（MB/s）</label>
                             <input
                                 id="request-upload-kbps"
                                 name="requested_upload_kbps"
                                 type="number"
-                                min="1"
-                                step="1"
+                                min="0.1"
+                                step="0.1"
                                 value="${escapeAttribute(requestsState.bandwidthForm?.requestedUploadKbps || "")}"
                                 required
                             >
                         </div>
 
                         <div class="field">
-                            <label for="request-download-kbps">下载带宽（Kbps）</label>
+                            <label for="request-download-kbps">下载带宽（MB/s）</label>
                             <input
                                 id="request-download-kbps"
                                 name="requested_download_kbps"
                                 type="number"
-                                min="1"
-                                step="1"
+                                min="0.1"
+                                step="0.1"
                                 value="${escapeAttribute(requestsState.bandwidthForm?.requestedDownloadKbps || "")}"
                                 required
                             >
@@ -482,20 +489,20 @@ function renderAdminPage() {
                             <input id="admin-default-storage-quota-mb" name="default_storage_quota_mb" type="number" min="1" step="1" value="${escapeAttribute(state.admin.settingsForm?.defaultStorageQuotaMB || "")}" required>
                         </div>
                         <div class="field">
-                            <label for="admin-default-upload-bandwidth">默认上传带宽（Kbps）</label>
-                            <input id="admin-default-upload-bandwidth" name="default_upload_bandwidth_kbps" type="number" min="1" step="1" value="${escapeAttribute(state.admin.settingsForm?.defaultUploadBandwidthKbps || "")}" required>
+                            <label for="admin-default-upload-bandwidth">默认上传带宽（MB/s）</label>
+                            <input id="admin-default-upload-bandwidth" name="default_upload_bandwidth_kbps" type="number" min="0.1" step="0.1" value="${escapeAttribute(state.admin.settingsForm?.defaultUploadBandwidthKbps || "")}" required>
                         </div>
                         <div class="field">
-                            <label for="admin-default-download-bandwidth">默认下载带宽（Kbps）</label>
-                            <input id="admin-default-download-bandwidth" name="default_download_bandwidth_kbps" type="number" min="1" step="1" value="${escapeAttribute(state.admin.settingsForm?.defaultDownloadBandwidthKbps || "")}" required>
+                            <label for="admin-default-download-bandwidth">默认下载带宽（MB/s）</label>
+                            <input id="admin-default-download-bandwidth" name="default_download_bandwidth_kbps" type="number" min="0.1" step="0.1" value="${escapeAttribute(state.admin.settingsForm?.defaultDownloadBandwidthKbps || "")}" required>
                         </div>
                         <div class="field">
-                            <label for="admin-max-user-upload-bandwidth">用户上传上限（Kbps）</label>
-                            <input id="admin-max-user-upload-bandwidth" name="max_user_upload_bandwidth_kbps" type="number" min="1" step="1" value="${escapeAttribute(state.admin.settingsForm?.maxUserUploadBandwidthKbps || "")}" required>
+                            <label for="admin-max-user-upload-bandwidth">用户上传上限（MB/s）</label>
+                            <input id="admin-max-user-upload-bandwidth" name="max_user_upload_bandwidth_kbps" type="number" min="0.1" step="0.1" value="${escapeAttribute(state.admin.settingsForm?.maxUserUploadBandwidthKbps || "")}" required>
                         </div>
                         <div class="field">
-                            <label for="admin-max-user-download-bandwidth">用户下载上限（Kbps）</label>
-                            <input id="admin-max-user-download-bandwidth" name="max_user_download_bandwidth_kbps" type="number" min="1" step="1" value="${escapeAttribute(state.admin.settingsForm?.maxUserDownloadBandwidthKbps || "")}" required>
+                            <label for="admin-max-user-download-bandwidth">用户下载上限（MB/s）</label>
+                            <input id="admin-max-user-download-bandwidth" name="max_user_download_bandwidth_kbps" type="number" min="0.1" step="0.1" value="${escapeAttribute(state.admin.settingsForm?.maxUserDownloadBandwidthKbps || "")}" required>
                         </div>
                         <div class="field">
                             <label for="admin-max-upload-file-mb">单文件上传上限（MB）</label>
@@ -956,6 +963,7 @@ function renderSharesPage() {
         </section>
 
         ${renderSharePanel()}
+        ${renderShareQRCodeDialog()}
     `;
 }
 
@@ -1111,6 +1119,16 @@ function renderLatestShareResult() {
 
             <div class="share-result-row">
                 <input type="text" readonly value="${escapeAttribute(publicLink)}">
+                <button
+                    type="button"
+                    class="icon-button"
+                    data-action="open-share-qr"
+                    data-share-token="${escapeHTML(state.shares.latestShareToken)}"
+                    aria-label="查看分享二维码"
+                    title="二维码"
+                >
+                    ${renderIcon("qr")}
+                </button>
                 <button type="button" class="button-secondary" data-action="copy-share-link" data-share-token="${escapeHTML(state.shares.latestShareToken)}">
                     复制链接
                 </button>
@@ -1168,6 +1186,16 @@ function renderShareItem(item) {
                     <button
                         type="button"
                         class="icon-button"
+                        data-action="open-share-qr"
+                        data-share-token="${escapeHTML(item.token)}"
+                        aria-label="查看分享二维码"
+                        title="二维码"
+                    >
+                        ${renderIcon("qr")}
+                    </button>
+                    <button
+                        type="button"
+                        class="icon-button"
                         data-action="open-share-link"
                         data-share-token="${escapeHTML(item.token)}"
                         aria-label="打开公开取件页"
@@ -1189,6 +1217,57 @@ function renderShareItem(item) {
                 </div>
             </div>
         </article>
+    `;
+}
+
+function renderShareQRCodeDialog() {
+    const shareToken = String(state.shares.qrCodeDialogToken || "").trim();
+    if (!shareToken) {
+        return "";
+    }
+
+    const publicLink = buildPublicShareURL(shareToken);
+    const qrCodeURL = buildShareQRCodeURL(publicLink);
+
+    return `
+        <div class="device-panel-backdrop" data-action="close-share-qr"></div>
+        <section class="share-qr-dialog" role="dialog" aria-modal="true" aria-labelledby="share-qr-title">
+            <div class="share-qr-dialog-header">
+                <div>
+                    <h3 id="share-qr-title">分享二维码</h3>
+                    <p class="muted">扫码后可以直接打开当前分享链接。</p>
+                </div>
+                <button
+                    type="button"
+                    class="icon-button"
+                    data-action="close-share-qr"
+                    aria-label="关闭二维码弹窗"
+                >
+                    ${renderIcon("close")}
+                </button>
+            </div>
+
+            <div class="share-qr-dialog-body">
+                <div class="share-qr-preview-shell">
+                    ${qrCodeURL ? `
+                        <img
+                            class="share-qr-preview-image"
+                            src="${escapeAttribute(qrCodeURL)}"
+                            alt="分享链接二维码"
+                        >
+                    ` : `
+                        <div class="empty-state compact-empty-state">
+                            <h3>二维码暂不可用</h3>
+                        </div>
+                    `}
+                </div>
+
+                <div class="share-qr-link-block">
+                    <strong>公开链接</strong>
+                    <p>${escapeHTML(publicLink)}</p>
+                </div>
+            </div>
+        </section>
     `;
 }
 
@@ -1243,6 +1322,20 @@ function buildShareStrategySummary(strategyKey) {
 function buildPublicShareURL(token) {
     const base = `${window.location.origin}${window.location.pathname}`;
     return `${base}#/public/${encodeURIComponent(token || "")}`;
+}
+
+function buildShareQRCodeURL(publicLink) {
+    const normalizedLink = String(publicLink || "").trim();
+    const normalizedServerBaseUrl = String(state.serverBaseUrl || "").trim().replace(/\/+$/, "");
+    if (!normalizedLink || !normalizedServerBaseUrl) {
+        return "";
+    }
+
+    const query = new URLSearchParams({
+        content: normalizedLink,
+        size: "280"
+    });
+    return `${normalizedServerBaseUrl}/v1/public/qrcode?${query.toString()}`;
 }
 
 function resolveStatusLabel(status) {
@@ -1360,11 +1453,11 @@ function renderBandwidthRecordSection(title, items) {
         (item) => `
             <article class="request-record-item">
                 <div class="request-record-head">
-                    <strong>${formatKbps(item.requested_upload_kbps)} / ${formatKbps(item.requested_download_kbps)}</strong>
+                    <strong>${formatBandwidthMBps(item.requested_upload_kbps)} / ${formatBandwidthMBps(item.requested_download_kbps)}</strong>
                     <span class="badge ${resolveRequestBadgeClass(item.status)}">${resolveRequestStatusLabel(item.status)}</span>
                 </div>
                 <div class="request-record-meta">
-                    <span>当前带宽 ${formatKbps(item.current_upload_kbps)} / ${formatKbps(item.current_download_kbps)}</span>
+                    <span>当前带宽 ${formatBandwidthMBps(item.current_upload_kbps)} / ${formatBandwidthMBps(item.current_download_kbps)}</span>
                     <span>${formatDateTime(item.created_at)}</span>
                 </div>
                 ${item.reason ? `<p class="request-record-note">${escapeHTML(item.reason)}</p>` : ""}
@@ -1468,26 +1561,26 @@ function renderAdminUserItem(user) {
                         >
                     </div>
                     <div class="field">
-                        <label for="admin-user-upload-${escapeAttribute(user.id)}">上传带宽（Kbps）</label>
+                        <label for="admin-user-upload-${escapeAttribute(user.id)}">上传带宽（MB/s）</label>
                         <input
                             id="admin-user-upload-${escapeAttribute(user.id)}"
                             name="upload_bandwidth_kbps"
                             type="number"
-                            min="1"
-                            step="1"
-                            value="${escapeAttribute(draft.uploadBandwidthKbps ?? user.upload_bandwidth_kbps ?? 0)}"
+                            min="0.1"
+                            step="0.1"
+                            value="${escapeAttribute(draft.uploadBandwidthKbps ?? bandwidthKbpsToMBpsInput(user.upload_bandwidth_kbps))}"
                             required
                         >
                     </div>
                     <div class="field">
-                        <label for="admin-user-download-${escapeAttribute(user.id)}">下载带宽（Kbps）</label>
+                        <label for="admin-user-download-${escapeAttribute(user.id)}">下载带宽（MB/s）</label>
                         <input
                             id="admin-user-download-${escapeAttribute(user.id)}"
                             name="download_bandwidth_kbps"
                             type="number"
-                            min="1"
-                            step="1"
-                            value="${escapeAttribute(draft.downloadBandwidthKbps ?? user.download_bandwidth_kbps ?? 0)}"
+                            min="0.1"
+                            step="0.1"
+                            value="${escapeAttribute(draft.downloadBandwidthKbps ?? bandwidthKbpsToMBpsInput(user.download_bandwidth_kbps))}"
                             required
                         >
                     </div>
@@ -1593,8 +1686,8 @@ function renderAdminBandwidthReviewList() {
                     <div>
                         <strong>${escapeHTML(item.username || "-")}</strong>
                         <div class="request-record-meta">
-                            <span>当前 ${formatKbps(item.current_upload_kbps)} / ${formatKbps(item.current_download_kbps)}</span>
-                            <span>申请 ${formatKbps(item.requested_upload_kbps)} / ${formatKbps(item.requested_download_kbps)}</span>
+                            <span>当前 ${formatBandwidthMBps(item.current_upload_kbps)} / ${formatBandwidthMBps(item.current_download_kbps)}</span>
+                            <span>申请 ${formatBandwidthMBps(item.requested_upload_kbps)} / ${formatBandwidthMBps(item.requested_download_kbps)}</span>
                             <span>${formatDateTime(item.created_at)}</span>
                         </div>
                     </div>
@@ -1603,12 +1696,12 @@ function renderAdminBandwidthReviewList() {
                 ${item.reason ? `<p class="request-record-note">${escapeHTML(item.reason)}</p>` : ""}
                 <div class="inline-fields">
                     <div class="field">
-                        <label for="bandwidth-approve-upload-${escapeAttribute(item.id)}">批准上传（Kbps）</label>
-                        <input id="bandwidth-approve-upload-${escapeAttribute(item.id)}" name="approved_upload_kbps" type="number" min="1" step="1" placeholder="${item.requested_upload_kbps}">
+                        <label for="bandwidth-approve-upload-${escapeAttribute(item.id)}">批准上传（MB/s）</label>
+                        <input id="bandwidth-approve-upload-${escapeAttribute(item.id)}" name="approved_upload_kbps" type="number" min="0.1" step="0.1" placeholder="${bandwidthKbpsToMBpsInput(item.requested_upload_kbps)}">
                     </div>
                     <div class="field">
-                        <label for="bandwidth-approve-download-${escapeAttribute(item.id)}">批准下载（Kbps）</label>
-                        <input id="bandwidth-approve-download-${escapeAttribute(item.id)}" name="approved_download_kbps" type="number" min="1" step="1" placeholder="${item.requested_download_kbps}">
+                        <label for="bandwidth-approve-download-${escapeAttribute(item.id)}">批准下载（MB/s）</label>
+                        <input id="bandwidth-approve-download-${escapeAttribute(item.id)}" name="approved_download_kbps" type="number" min="0.1" step="0.1" placeholder="${bandwidthKbpsToMBpsInput(item.requested_download_kbps)}">
                     </div>
                 </div>
                 <div class="field">
@@ -1697,18 +1790,6 @@ function resolveRequestBadgeClass(status) {
         default:
             return "badge-warning";
     }
-}
-
-function formatKbps(value) {
-    const normalized = Number(value || 0);
-    if (!Number.isFinite(normalized) || normalized <= 0) {
-        return "-";
-    }
-
-    if (normalized >= 1024) {
-        return `${(normalized / 1024).toFixed(normalized >= 10240 ? 1 : 2)} Mbps`;
-    }
-    return `${normalized} Kbps`;
 }
 
 function bytesToMegabytes(value) {

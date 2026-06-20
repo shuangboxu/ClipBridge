@@ -1,5 +1,6 @@
 package com.xushuangbo.clipbridge.windows.ui;
 
+import com.xushuangbo.clipbridge.windows.util.BandwidthUnitUtils;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -108,20 +109,20 @@ public final class AdminPanelCells {
 
                 Label info = new Label(
                     item.username()
-                        + " | 当前上/下=" + item.currentUploadKbps() + "/" + item.currentDownloadKbps()
-                        + " KB/s | 申请上/下=" + item.requestedUploadKbps() + "/" + item.requestedDownloadKbps()
-                        + " KB/s | 说明=" + nonBlank(item.reason(), "-")
+                        + " | 当前上/下=" + BandwidthUnitUtils.formatBandwidth(item.currentUploadKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.currentDownloadKbps())
+                        + " | 申请上/下=" + BandwidthUnitUtils.formatBandwidth(item.requestedUploadKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.requestedDownloadKbps())
+                        + " | 说明=" + nonBlank(item.reason(), "-")
                 );
                 info.setWrapText(true);
                 info.setMaxWidth(Double.MAX_VALUE);
                 HBox.setHgrow(info, Priority.ALWAYS);
 
                 TextField approvedUploadField = new TextField();
-                approvedUploadField.setPromptText("通过上传KB/s");
+                approvedUploadField.setPromptText("通过上传MB/s");
                 approvedUploadField.setPrefWidth(130);
 
                 TextField approvedDownloadField = new TextField();
-                approvedDownloadField.setPromptText("通过下载KB/s");
+                approvedDownloadField.setPromptText("通过下载MB/s");
                 approvedDownloadField.setPrefWidth(130);
 
                 TextField noteField = new TextField();
@@ -131,10 +132,10 @@ public final class AdminPanelCells {
                 Button approveButton = new Button("通过");
                 approveButton.getStyleClass().add("btn-primary");
                 approveButton.setOnAction(e -> {
-                    Integer upload = parseIntValue(approvedUploadField.getText(), 0);
-                    Integer download = parseIntValue(approvedDownloadField.getText(), 0);
-                    upload = upload > 0 ? upload : null;
-                    download = download > 0 ? download : null;
+                    Integer upload = BandwidthUnitUtils.parseBandwidthMbOptional(approvedUploadField.getText());
+                    Integer download = BandwidthUnitUtils.parseBandwidthMbOptional(approvedDownloadField.getText());
+                    upload = upload != null && upload > 0 ? upload : null;
+                    download = download != null && download > 0 ? download : null;
                     approveAction.apply(item, upload, download, noteField.getText());
                 });
 
@@ -217,7 +218,7 @@ public final class AdminPanelCells {
                         + " | " + (item.isAdmin() ? "管理员" : "普通用户")
                         + " | 配额=" + formatBytes(item.storageQuotaBytes())
                         + " | 已用=" + formatBytes(item.storageUsedBytes())
-                        + " | 上/下行=" + item.uploadBandwidthKbps() + "/" + item.downloadBandwidthKbps() + " KB/s"
+                        + " | 上/下行=" + BandwidthUnitUtils.formatBandwidth(item.uploadBandwidthKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.downloadBandwidthKbps())
                 );
                 info.setWrapText(true);
                 info.setMaxWidth(Double.MAX_VALUE);
@@ -228,20 +229,20 @@ public final class AdminPanelCells {
                 quotaMbField.setPromptText("配额MB");
                 quotaMbField.setPrefWidth(100);
 
-                TextField uploadField = new TextField(String.valueOf(Math.max(1, item.uploadBandwidthKbps())));
-                uploadField.setPromptText("上传KB/s");
+                TextField uploadField = new TextField(BandwidthUnitUtils.toBandwidthInput(item.uploadBandwidthKbps()));
+                uploadField.setPromptText("上传MB/s");
                 uploadField.setPrefWidth(100);
 
-                TextField downloadField = new TextField(String.valueOf(Math.max(1, item.downloadBandwidthKbps())));
-                downloadField.setPromptText("下载KB/s");
+                TextField downloadField = new TextField(BandwidthUnitUtils.toBandwidthInput(item.downloadBandwidthKbps()));
+                downloadField.setPromptText("下载MB/s");
                 downloadField.setPrefWidth(100);
 
                 Button updateButton = new Button("更新");
                 updateButton.getStyleClass().add("btn-primary");
                 updateButton.setOnAction(e -> {
                     long quotaMb = parseLongValue(quotaMbField.getText(), 0L);
-                    int upload = parseIntValue(uploadField.getText(), 0);
-                    int download = parseIntValue(downloadField.getText(), 0);
+                    int upload = BandwidthUnitUtils.parseBandwidthMbOrFallback(uploadField.getText(), 0);
+                    int download = BandwidthUnitUtils.parseBandwidthMbOrFallback(downloadField.getText(), 0);
                     if (quotaMb <= 0 || upload <= 0 || download <= 0) {
                         statusSink.accept("用户配置必须是正整数");
                         return;

@@ -6,4 +6,14 @@ log.md
 android/.kotlin/
 android/.idea/deviceManager.xml
 android/.idea/studiobot.xml
+
+# 课程设计相关的本地资料，不参与版本管理
 课程设计报告/
+测试账号信息.txt
+
+# 本地临时输出与打包缓存
+tmp/
+output/
+
+# Office 临时锁文件
+~$*.docx

@@ -7,6 +7,7 @@ import com.xushuangbo.clipbridge.windows.state.AppState;
 import com.xushuangbo.clipbridge.windows.state.AppStateStore;
 import com.xushuangbo.clipbridge.windows.state.ShareRules;
 import com.xushuangbo.clipbridge.windows.sync.ClipboardSyncService;
+import com.xushuangbo.clipbridge.windows.util.BandwidthUnitUtils;
 import com.xushuangbo.clipbridge.windows.util.PublicShareLinkBuilder;
 import com.xushuangbo.clipbridge.windows.util.ServiceAddressFormatter;
 import com.xushuangbo.clipbridge.windows.util.WindowsStartupManager;
@@ -1088,9 +1089,9 @@ public class MainApp extends Application {
         submitQuotaButton.setOnAction(event -> submitQuotaRequest());
 
         requestUploadField = new TextField();
-        requestUploadField.setPromptText("上传带宽 Kbps");
+        requestUploadField.setPromptText("上传带宽 MB/s");
         requestDownloadField = new TextField();
-        requestDownloadField.setPromptText("下载带宽 Kbps");
+        requestDownloadField.setPromptText("下载带宽 MB/s");
         requestBandwidthReasonArea = new TextArea();
         requestBandwidthReasonArea.setPromptText("为什么需要调整带宽");
         requestBandwidthReasonArea.setPrefRowCount(3);
@@ -1155,10 +1156,10 @@ public class MainApp extends Application {
             adminSettingsMetaLabel,
             createLabeledField("最大用户数", adminMaxUsersField),
             createLabeledField("默认存储配额 MB", adminDefaultQuotaField),
-            createLabeledField("默认上传带宽 Kbps", adminDefaultUploadField),
-            createLabeledField("默认下载带宽 Kbps", adminDefaultDownloadField),
-            createLabeledField("用户上传上限 Kbps", adminMaxUserUploadField),
-            createLabeledField("用户下载上限 Kbps", adminMaxUserDownloadField),
+            createLabeledField("默认上传带宽 MB/s", adminDefaultUploadField),
+            createLabeledField("默认下载带宽 MB/s", adminDefaultDownloadField),
+            createLabeledField("用户上传上限 MB/s", adminMaxUserUploadField),
+            createLabeledField("用户下载上限 MB/s", adminMaxUserDownloadField),
             createLabeledField("单文件上传上限 MB", adminMaxUploadFileField),
             adminAllowRegistrationCheck,
             saveSettingsButton
@@ -1177,7 +1178,7 @@ public class MainApp extends Application {
                 title.getStyleClass().add("list-item-title");
                 Label meta = createSmallMutedLabel(
                     "配额 " + formatBytes(item.storageQuotaBytes()) +
-                        " · 带宽 " + item.uploadBandwidthKbps() + "/" + item.downloadBandwidthKbps() + " Kbps"
+                        " · 带宽 " + BandwidthUnitUtils.formatBandwidth(item.uploadBandwidthKbps()) + " / " + BandwidthUnitUtils.formatBandwidth(item.downloadBandwidthKbps())
                 );
                 VBox box = new VBox(6, title, meta);
                 box.getStyleClass().add("list-item-card");
@@ -1202,8 +1203,8 @@ public class MainApp extends Application {
             adminUserDetailTitleLabel,
             adminUserDetailMetaLabel,
             createLabeledField("存储配额 MB", adminUserQuotaField),
-            createLabeledField("上传带宽 Kbps", adminUserUploadField),
-            createLabeledField("下载带宽 Kbps", adminUserDownloadField),
+            createLabeledField("上传带宽 MB/s", adminUserUploadField),
+            createLabeledField("下载带宽 MB/s", adminUserDownloadField),
             adminUserAdminCheck,
             adminUserSaveButton,
             adminUserDeleteButton
@@ -1700,7 +1701,10 @@ public class MainApp extends Application {
                 overviewDeviceValueLabel.setText(nonBlank(stateStore.getState().getDeviceName(), "未命名设备") + " · " + trimMiddle(profile.currentDeviceId(), 22));
                 overviewSyncValueLabel.setText(buildSyncSummary());
                 overviewQuotaValueLabel.setText(formatBytes(profile.storageUsedBytes()) + " / " + formatBytes(profile.storageQuotaBytes()));
-                overviewBandwidthValueLabel.setText(profile.uploadBandwidthKbps() + " / " + profile.downloadBandwidthKbps() + " Kbps");
+                overviewBandwidthValueLabel.setText(
+                    BandwidthUnitUtils.formatBandwidth(profile.uploadBandwidthKbps()) + " / " +
+                        BandwidthUnitUtils.formatBandwidth(profile.downloadBandwidthKbps())
+                );
                 overviewAckValueLabel.setText("已确认到 seq " + stateStore.getState().getLastAckSeq());
                 updateSyncControls();
                 clearPageNotice(NavPage.OVERVIEW);
@@ -1953,10 +1957,10 @@ public class MainApp extends Application {
         );
         adminMaxUsersField.setText(String.valueOf(settings.maxUserCount()));
         adminDefaultQuotaField.setText(String.valueOf(settings.defaultStorageQuotaBytes() / (1024L * 1024L)));
-        adminDefaultUploadField.setText(String.valueOf(settings.defaultUploadBandwidthKbps()));
-        adminDefaultDownloadField.setText(String.valueOf(settings.defaultDownloadBandwidthKbps()));
-        adminMaxUserUploadField.setText(String.valueOf(settings.maxUserUploadBandwidthKbps()));
-        adminMaxUserDownloadField.setText(String.valueOf(settings.maxUserDownloadBandwidthKbps()));
+        adminDefaultUploadField.setText(BandwidthUnitUtils.toBandwidthInput(settings.defaultUploadBandwidthKbps()));
+        adminDefaultDownloadField.setText(BandwidthUnitUtils.toBandwidthInput(settings.defaultDownloadBandwidthKbps()));
+        adminMaxUserUploadField.setText(BandwidthUnitUtils.toBandwidthInput(settings.maxUserUploadBandwidthKbps()));
+        adminMaxUserDownloadField.setText(BandwidthUnitUtils.toBandwidthInput(settings.maxUserDownloadBandwidthKbps()));
         adminMaxUploadFileField.setText(String.valueOf(settings.maxUploadFileBytes() / (1024L * 1024L)));
         adminAllowRegistrationCheck.setSelected(settings.allowRegistration());
 
@@ -2099,8 +2103,8 @@ public class MainApp extends Application {
                 "\n最近活跃: " + nonBlank(formatTime(user.lastActiveAt()), "未知")
         );
         adminUserQuotaField.setText(String.valueOf(user.storageQuotaBytes() / (1024L * 1024L)));
-        adminUserUploadField.setText(String.valueOf(user.uploadBandwidthKbps()));
-        adminUserDownloadField.setText(String.valueOf(user.downloadBandwidthKbps()));
+        adminUserUploadField.setText(BandwidthUnitUtils.toBandwidthInput(user.uploadBandwidthKbps()));
+        adminUserDownloadField.setText(BandwidthUnitUtils.toBandwidthInput(user.downloadBandwidthKbps()));
         adminUserAdminCheck.setSelected(user.isAdmin());
         adminUserSaveButton.setDisable(false);
         adminUserDeleteButton.setDisable(false);
@@ -2411,10 +2415,10 @@ public class MainApp extends Application {
     }
 
     private void submitBandwidthRequest() {
-        int upload = parseInt(requestUploadField.getText(), 0);
-        int download = parseInt(requestDownloadField.getText(), 0);
+        int upload = BandwidthUnitUtils.parseBandwidthMbOrFallback(requestUploadField.getText(), 0);
+        int download = BandwidthUnitUtils.parseBandwidthMbOrFallback(requestDownloadField.getText(), 0);
         if (upload <= 0 || download <= 0) {
-            showPageNotice(NavPage.REQUESTS, "上传和下载带宽都必须是正整数 Kbps。");
+            showPageNotice(NavPage.REQUESTS, "上传和下载带宽都必须是大于 0 的数字 MB/s。");
             return;
         }
         runTask(
@@ -2453,10 +2457,10 @@ public class MainApp extends Application {
     private void saveAdminSettings() {
         Integer maxUsers = parseOptionalInt(adminMaxUsersField.getText());
         Long defaultQuotaMb = parseOptionalLong(adminDefaultQuotaField.getText());
-        Integer defaultUpload = parseOptionalInt(adminDefaultUploadField.getText());
-        Integer defaultDownload = parseOptionalInt(adminDefaultDownloadField.getText());
-        Integer maxUserUpload = parseOptionalInt(adminMaxUserUploadField.getText());
-        Integer maxUserDownload = parseOptionalInt(adminMaxUserDownloadField.getText());
+        Integer defaultUpload = BandwidthUnitUtils.parseBandwidthMbOptional(adminDefaultUploadField.getText());
+        Integer defaultDownload = BandwidthUnitUtils.parseBandwidthMbOptional(adminDefaultDownloadField.getText());
+        Integer maxUserUpload = BandwidthUnitUtils.parseBandwidthMbOptional(adminMaxUserUploadField.getText());
+        Integer maxUserDownload = BandwidthUnitUtils.parseBandwidthMbOptional(adminMaxUserDownloadField.getText());
         Long maxUploadFileMb = parseOptionalLong(adminMaxUploadFileField.getText());
         runTask(
             () -> apiClient.updateAdminSettings(
@@ -2487,8 +2491,8 @@ public class MainApp extends Application {
             () -> apiClient.updateAdminUser(
                 selected.id(),
                 parseOptionalLong(adminUserQuotaField.getText()),
-                parseOptionalInt(adminUserUploadField.getText()),
-                parseOptionalInt(adminUserDownloadField.getText()),
+                BandwidthUnitUtils.parseBandwidthMbOptional(adminUserUploadField.getText()),
+                BandwidthUnitUtils.parseBandwidthMbOptional(adminUserDownloadField.getText()),
                 adminUserAdminCheck.isSelected()
             ),
             user -> {
@@ -3481,7 +3485,8 @@ public class MainApp extends Application {
                 }
                 VBox box = createRequestRecordBox(
                     item.username() + " · " + statusText(item.status()),
-                    "当前 " + item.currentUploadKbps() + "/" + item.currentDownloadKbps() + " Kbps · 申请 " + item.requestedUploadKbps() + "/" + item.requestedDownloadKbps() + " Kbps",
+                    "当前 " + BandwidthUnitUtils.formatBandwidth(item.currentUploadKbps()) + " / " + BandwidthUnitUtils.formatBandwidth(item.currentDownloadKbps()) +
+                        " · 申请 " + BandwidthUnitUtils.formatBandwidth(item.requestedUploadKbps()) + " / " + BandwidthUnitUtils.formatBandwidth(item.requestedDownloadKbps()),
                     item.reason(),
                     item.reviewNote(),
                     item.createdAt(),
@@ -3844,7 +3849,9 @@ public class MainApp extends Application {
                 return;
             }
             VBox card = createRequestRecordBox(
-                item.username() + " · " + item.currentUploadKbps() + "/" + item.currentDownloadKbps() + " -> " + item.requestedUploadKbps() + "/" + item.requestedDownloadKbps() + " Kbps",
+                item.username() + " · " +
+                    BandwidthUnitUtils.formatBandwidth(item.currentUploadKbps()) + " / " + BandwidthUnitUtils.formatBandwidth(item.currentDownloadKbps()) +
+                    " -> " + BandwidthUnitUtils.formatBandwidth(item.requestedUploadKbps()) + " / " + BandwidthUnitUtils.formatBandwidth(item.requestedDownloadKbps()),
                 "待审批带宽申请",
                 item.reason(),
                 item.reviewNote(),
@@ -3929,10 +3936,10 @@ public class MainApp extends Application {
     private void approveBandwidthRequest(BandwidthRequest request) {
         ReviewDialogResult result = showDualReviewDialog(
             "批准带宽申请",
-            "批准上传 Kbps",
-            String.valueOf(request.requestedUploadKbps()),
-            "批准下载 Kbps",
-            String.valueOf(request.requestedDownloadKbps())
+            "批准上传 MB/s",
+            BandwidthUnitUtils.toBandwidthInput(request.requestedUploadKbps()),
+            "批准下载 MB/s",
+            BandwidthUnitUtils.toBandwidthInput(request.requestedDownloadKbps())
         );
         if (result == null) {
             return;
@@ -3940,8 +3947,8 @@ public class MainApp extends Application {
         runTask(
             () -> apiClient.approveBandwidthRequest(
                 request.id(),
-                parseOptionalInt(result.primaryValue()),
-                parseOptionalInt(result.secondaryValue()),
+                BandwidthUnitUtils.parseBandwidthMbOptional(result.primaryValue()),
+                BandwidthUnitUtils.parseBandwidthMbOptional(result.secondaryValue()),
                 result.note()
             ),
             updated -> {

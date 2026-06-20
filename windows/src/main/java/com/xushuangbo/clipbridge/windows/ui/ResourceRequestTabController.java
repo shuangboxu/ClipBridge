@@ -1,5 +1,6 @@
 package com.xushuangbo.clipbridge.windows.ui;
 
+import com.xushuangbo.clipbridge.windows.util.BandwidthUnitUtils;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
@@ -108,9 +109,9 @@ public final class ResourceRequestTabController {
         });
 
         TextField uploadKbpsField = new TextField();
-        uploadKbpsField.setPromptText("申请上传带宽（KB/s）");
+        uploadKbpsField.setPromptText("申请上传带宽（MB/s）");
         TextField downloadKbpsField = new TextField();
-        downloadKbpsField.setPromptText("申请下载带宽（KB/s）");
+        downloadKbpsField.setPromptText("申请下载带宽（MB/s）");
         TextArea bandwidthReasonField = new TextArea();
         bandwidthReasonField.setPromptText("带宽申请原因（可选）");
         bandwidthReasonField.setPrefRowCount(2);
@@ -118,10 +119,10 @@ public final class ResourceRequestTabController {
         Button submitBandwidthButton = new Button("提交带宽申请");
         submitBandwidthButton.getStyleClass().add("btn-primary");
         submitBandwidthButton.setOnAction(e -> {
-            int upload = parseIntValue(uploadKbpsField.getText(), 0);
-            int download = parseIntValue(downloadKbpsField.getText(), 0);
+            int upload = BandwidthUnitUtils.parseBandwidthMbOrFallback(uploadKbpsField.getText(), 0);
+            int download = BandwidthUnitUtils.parseBandwidthMbOrFallback(downloadKbpsField.getText(), 0);
             if (upload <= 0 || download <= 0) {
-                statusSink.accept("申请带宽必须是正整数 KB/s");
+                statusSink.accept("申请带宽必须是大于 0 的数字 MB/s");
                 return;
             }
             submitBandwidthAction.submit(upload, download, bandwidthReasonField.getText(), bandwidthReasonField::clear);
@@ -170,9 +171,9 @@ public final class ResourceRequestTabController {
                 }
                 setText(
                     "状态=" + statusText(item.status()) +
-                        " | 当前(上/下)=" + item.currentUploadKbps() + "/" + item.currentDownloadKbps() +
-                        " KB/s | 申请(上/下)=" + item.requestedUploadKbps() + "/" + item.requestedDownloadKbps() +
-                        " KB/s | 说明=" + nonBlank(item.reason(), "-")
+                        " | 当前(上/下)=" + BandwidthUnitUtils.formatBandwidth(item.currentUploadKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.currentDownloadKbps()) +
+                        " | 申请(上/下)=" + BandwidthUnitUtils.formatBandwidth(item.requestedUploadKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.requestedDownloadKbps()) +
+                        " | 说明=" + nonBlank(item.reason(), "-")
                 );
             }
         });

@@ -3,7 +3,11 @@ package com.xushuangbo.clipbridge.feature.shell
 import com.xushuangbo.clipbridge.MainDispatcherRule
 import com.xushuangbo.clipbridge.core.network.AuthApiException
 import com.xushuangbo.clipbridge.core.network.ClipboardApiClient
+import com.xushuangbo.clipbridge.core.network.ClipboardHistoryCleanupResult
+import com.xushuangbo.clipbridge.core.network.ClipboardHistoryDeleteResult
 import com.xushuangbo.clipbridge.core.network.ClipboardHistoryResult
+import com.xushuangbo.clipbridge.core.network.ClipboardHistorySettings
+import com.xushuangbo.clipbridge.core.network.ClipboardHistorySettingsResult
 import com.xushuangbo.clipbridge.core.network.ClipboardItem
 import com.xushuangbo.clipbridge.core.network.ClipboardUploadResult
 import com.xushuangbo.clipbridge.core.network.SyncPullResult
@@ -159,7 +163,7 @@ class HistoryViewModelTest {
     }
 
     @Test
-    fun pullRemoteHistory_withoutItemsDoesNotAck() = runTest {
+    fun pullRemoteHistory_withoutItemsStillAdvancesAckCursor() = runTest {
         val sessionStore = FakeHistorySessionStore(lastAckSeq = 3L)
         val clipboardApiClient = FakeHistoryClipboardApiClient(
             pullResult = SyncPullResult(
@@ -176,8 +180,8 @@ class HistoryViewModelTest {
         viewModel.pullRemoteHistory()
         advanceUntilIdle()
 
-        assertTrue(clipboardApiClient.ackedSeqs.isEmpty())
-        assertEquals(3L, sessionStore.readLastAckSeq())
+        assertEquals(listOf(9L), clipboardApiClient.ackedSeqs)
+        assertEquals(9L, sessionStore.readLastAckSeq())
     }
 
     @Test
@@ -457,4 +461,61 @@ private class FakeHistoryClipboardApiClient(
         ackedSeqs += seq
         return null
     }
+
+    override suspend fun deleteClipboardItem(
+        session: StoredSession,
+        itemId: String,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryDeleteResult = ClipboardHistoryDeleteResult(
+        deletedCount = 0,
+        latestSeq = historyResult.latestSeq,
+        currentDeviceAckSeq = historyResult.currentDeviceAckSeq,
+    )
+
+    override suspend fun clearClipboardHistory(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryCleanupResult = ClipboardHistoryCleanupResult(
+        deletedCount = 0,
+        settings = ClipboardHistorySettings(
+            retentionDays = 0,
+            historyLimit = 1000,
+            updatedAt = "",
+        ),
+        latestSeq = historyResult.latestSeq,
+        currentDeviceAckSeq = historyResult.currentDeviceAckSeq,
+    )
+
+    override suspend fun cleanupClipboardHistory(
+        session: StoredSession,
+        days: Int,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryCleanupResult = clearClipboardHistory(session, onRefreshing)
+
+    override suspend fun getHistorySettings(
+        session: StoredSession,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistorySettingsResult = ClipboardHistorySettingsResult(
+        settings = ClipboardHistorySettings(
+            retentionDays = 0,
+            historyLimit = 1000,
+            updatedAt = "",
+        ),
+    )
+
+    override suspend fun updateHistorySettings(
+        session: StoredSession,
+        retentionDays: Int,
+        historyLimit: Int,
+        onRefreshing: (() -> Unit)?,
+    ): ClipboardHistoryCleanupResult = ClipboardHistoryCleanupResult(
+        deletedCount = 0,
+        settings = ClipboardHistorySettings(
+            retentionDays = retentionDays,
+            historyLimit = historyLimit,
+            updatedAt = "",
+        ),
+        latestSeq = historyResult.latestSeq,
+        currentDeviceAckSeq = historyResult.currentDeviceAckSeq,
+    )
 }

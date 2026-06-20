@@ -1,5 +1,6 @@
 package com.xushuangbo.clipbridge.windows.ui;
 
+import com.xushuangbo.clipbridge.windows.util.BandwidthUnitUtils;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.util.Callback;
@@ -42,9 +43,9 @@ public final class ResourceRequestCells {
                 }
                 setText(
                     "状态=" + statusText(item.status()) +
-                        " | 当前(上/下)=" + item.currentUploadKbps() + "/" + item.currentDownloadKbps() +
-                        " KB/s | 申请(上/下)=" + item.requestedUploadKbps() + "/" + item.requestedDownloadKbps() +
-                        " KB/s | 说明=" + nonBlank(item.reason(), "-")
+                        " | 当前(上/下)=" + BandwidthUnitUtils.formatBandwidth(item.currentUploadKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.currentDownloadKbps()) +
+                        " | 申请(上/下)=" + BandwidthUnitUtils.formatBandwidth(item.requestedUploadKbps()) + "/" + BandwidthUnitUtils.formatBandwidth(item.requestedDownloadKbps()) +
+                        " | 说明=" + nonBlank(item.reason(), "-")
                 );
             }
         };

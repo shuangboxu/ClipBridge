@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
@@ -48,7 +49,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -89,6 +93,7 @@ fun ShareScreenRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    var qrCodeDialogLink by rememberSaveable { mutableStateOf("") }
 
     val pickFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -106,6 +111,13 @@ fun ShareScreenRoute(
         if (createDialogVisible && uiState.createSuccessVersion > 0) {
             onCreateDialogDismiss()
         }
+    }
+
+    if (qrCodeDialogLink.isNotBlank()) {
+        ShareQrCodeDialog(
+            shareLink = qrCodeDialogLink,
+            onDismiss = { qrCodeDialogLink = "" },
+        )
     }
 
     ShareScreen(
@@ -140,6 +152,13 @@ fun ShareScreenRoute(
                     .onFailure { viewModel.showUiError("无法打开浏览器，请检查系统设置") }
             }
         },
+        onShowQrCode = { link ->
+            if (link.isBlank()) {
+                viewModel.showUiError("分享链接无效，无法显示二维码")
+            } else {
+                qrCodeDialogLink = link
+            }
+        },
     )
 }
 
@@ -162,6 +181,7 @@ fun ShareScreen(
     onRevokeShare: (String) -> Unit,
     onCopyLink: (String) -> Unit,
     onOpenLink: (String) -> Unit,
+    onShowQrCode: (String) -> Unit,
 ) {
     if (createDialogVisible) {
         ShareCreateDialog(
@@ -196,6 +216,7 @@ fun ShareScreen(
                     shareLink = uiState.latestShareLink,
                     onCopyLink = { onCopyLink(uiState.latestShareLink) },
                     onOpenLink = { onOpenLink(uiState.latestShareLink) },
+                    onShowQrCode = { onShowQrCode(uiState.latestShareLink) },
                 )
             }
         }
@@ -224,6 +245,7 @@ fun ShareScreen(
                     isRevoking = uiState.revokingShareId == share.id,
                     onCopyLink = { onCopyLink(publicLink) },
                     onOpenLink = { onOpenLink(publicLink) },
+                    onShowQrCode = { onShowQrCode(publicLink) },
                     onRevokeShare = { onRevokeShare(share.id) },
                 )
             }
@@ -609,14 +631,8 @@ private fun LatestShareResultCard(
     shareLink: String,
     onCopyLink: () -> Unit,
     onOpenLink: () -> Unit,
+    onShowQrCode: () -> Unit,
 ) {
-    val qrBitmap = remember(shareLink) {
-        QrCodeBitmapFactory.createBitmapOrNull(
-            content = shareLink,
-            sizePx = 480,
-        )
-    }
-
     Surface(
         shape = RoundedCornerShape(28.dp),
         tonalElevation = 6.dp,
@@ -640,27 +656,15 @@ private fun LatestShareResultCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("复制链接")
                 }
+                OutlinedButton(onClick = onShowQrCode) {
+                    Icon(imageVector = Icons.Outlined.QrCodeScanner, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("二维码")
+                }
                 OutlinedButton(onClick = onOpenLink) {
                     Icon(imageVector = Icons.Outlined.OpenInBrowser, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("浏览器打开")
-                }
-            }
-
-            if (qrBitmap != null) {
-                Spacer(modifier = Modifier.height(18.dp))
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                ) {
-                    Image(
-                        bitmap = qrBitmap.asImageBitmap(),
-                        contentDescription = "分享二维码",
-                        modifier = Modifier
-                            .size(220.dp)
-                            .padding(12.dp),
-                    )
                 }
             }
         }
@@ -704,6 +708,7 @@ private fun ShareItemCard(
     isRevoking: Boolean,
     onCopyLink: () -> Unit,
     onOpenLink: () -> Unit,
+    onShowQrCode: () -> Unit,
     onRevokeShare: () -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -791,6 +796,12 @@ private fun ShareItemCard(
                     onClick = onCopyLink,
                 )
                 ActionTextButton(
+                    title = "二维码",
+                    icon = Icons.Outlined.QrCodeScanner,
+                    enabled = publicLink.isNotBlank(),
+                    onClick = onShowQrCode,
+                )
+                ActionTextButton(
                     title = "浏览器打开",
                     icon = Icons.Outlined.OpenInBrowser,
                     enabled = publicLink.isNotBlank(),
@@ -807,6 +818,60 @@ private fun ShareItemCard(
             }
         }
     }
+}
+
+@Composable
+private fun ShareQrCodeDialog(
+    shareLink: String,
+    onDismiss: () -> Unit,
+) {
+    val qrBitmap = remember(shareLink) {
+        QrCodeBitmapFactory.createBitmapOrNull(
+            content = shareLink,
+            sizePx = 560,
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("分享二维码")
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (qrBitmap != null) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    ) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = "分享二维码",
+                            modifier = Modifier
+                                .size(240.dp)
+                                .padding(12.dp),
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = shareLink,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("关闭")
+            }
+        },
+    )
 }
 
 @Composable

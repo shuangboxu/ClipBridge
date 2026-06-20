@@ -18,7 +18,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -152,7 +151,7 @@ fun UserManagementScreen(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    OutlinedTextField(
+                    ShellFormTextField(
                         value = uiState.storageQuotaMbDraft,
                         onValueChange = onStorageQuotaDraftChange,
                         label = { Text("存储配额（MB）") },
@@ -160,20 +159,20 @@ fun UserManagementScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    ShellFormTextField(
                         value = uiState.uploadBandwidthKbpsDraft,
                         onValueChange = onUploadBandwidthDraftChange,
-                        label = { Text("上传带宽（Kbps）") },
+                        label = { Text("上传带宽（MB/s）") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    ShellFormTextField(
                         value = uiState.downloadBandwidthKbpsDraft,
                         onValueChange = onDownloadBandwidthDraftChange,
-                        label = { Text("下载带宽（Kbps）") },
+                        label = { Text("下载带宽（MB/s）") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(
@@ -267,8 +266,8 @@ private fun AdminUserCard(
             SummaryRow("存储配额", formatShellBytes(user.storageQuotaBytes))
             SummaryRow("已用空间", formatShellBytes(user.storageUsedBytes))
             SummaryRow("剩余空间", formatShellBytes(user.storageFreeBytes))
-            SummaryRow("上传带宽", formatShellKbps(user.uploadBandwidthKbps))
-            SummaryRow("下载带宽", formatShellKbps(user.downloadBandwidthKbps))
+            SummaryRow("上传带宽", formatShellBandwidth(user.uploadBandwidthKbps))
+            SummaryRow("下载带宽", formatShellBandwidth(user.downloadBandwidthKbps))
             SummaryRow("最近活跃", formatShellLocalDateTime(user.lastActiveAt))
 
             val pendingTags = buildList {

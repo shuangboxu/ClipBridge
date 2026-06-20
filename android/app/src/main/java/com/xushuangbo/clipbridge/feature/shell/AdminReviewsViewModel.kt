@@ -135,8 +135,8 @@ class AdminReviewsViewModel(
                 selectedReviewType = AdminReviewType.Bandwidth,
                 selectedRequestId = requestId,
                 approvedQuotaMbDraft = "",
-                approvedUploadKbpsDraft = request.requestedUploadKbps.toString(),
-                approvedDownloadKbpsDraft = request.requestedDownloadKbps.toString(),
+                approvedUploadKbpsDraft = bandwidthKbpsToMbDraft(request.requestedUploadKbps),
+                approvedDownloadKbpsDraft = bandwidthKbpsToMbDraft(request.requestedDownloadKbps),
                 reviewNoteDraft = "",
                 errorMessage = null,
             )
@@ -324,13 +324,13 @@ class AdminReviewsViewModel(
             AdminReviewType.Bandwidth -> {
                 val approvedUpload = _uiState.value.approvedUploadKbpsDraft.trim()
                 val approvedDownload = _uiState.value.approvedDownloadKbpsDraft.trim()
-                val approvedUploadValue = approvedUpload.toIntOrNull()
-                val approvedDownloadValue = approvedDownload.toIntOrNull()
-                if (approvedUpload.isNotBlank() && (approvedUploadValue == null || approvedUploadValue <= 0)) {
-                    throw AuthApiException(message = "批准后的上传带宽必须是大于 0 的整数 Kbps")
+                val approvedUploadValue = bandwidthMbDraftToKbpsOrNull(approvedUpload)
+                val approvedDownloadValue = bandwidthMbDraftToKbpsOrNull(approvedDownload)
+                if (approvedUpload.isNotBlank() && approvedUploadValue == null) {
+                    throw AuthApiException(message = "批准后的上传带宽必须是大于 0 的数字 MB/s")
                 }
-                if (approvedDownload.isNotBlank() && (approvedDownloadValue == null || approvedDownloadValue <= 0)) {
-                    throw AuthApiException(message = "批准后的下载带宽必须是大于 0 的整数 Kbps")
+                if (approvedDownload.isNotBlank() && approvedDownloadValue == null) {
+                    throw AuthApiException(message = "批准后的下载带宽必须是大于 0 的数字 MB/s")
                 }
                 val result = adminApiClient.approveBandwidthRequest(
                     session = session,

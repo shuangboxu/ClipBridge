@@ -16,7 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -139,24 +138,28 @@ fun AdminSettingsScreen(
                         onValueChange = onDefaultStorageQuotaMbChange,
                     )
                     AdminNumberField(
-                        label = "默认上传带宽（Kbps）",
+                        label = "默认上传带宽（MB/s）",
                         value = uiState.defaultUploadBandwidthKbpsDraft,
                         onValueChange = onDefaultUploadBandwidthChange,
+                        keyboardType = KeyboardType.Decimal,
                     )
                     AdminNumberField(
-                        label = "默认下载带宽（Kbps）",
+                        label = "默认下载带宽（MB/s）",
                         value = uiState.defaultDownloadBandwidthKbpsDraft,
                         onValueChange = onDefaultDownloadBandwidthChange,
+                        keyboardType = KeyboardType.Decimal,
                     )
                     AdminNumberField(
-                        label = "用户上传上限（Kbps）",
+                        label = "用户上传上限（MB/s）",
                         value = uiState.maxUserUploadBandwidthKbpsDraft,
                         onValueChange = onMaxUserUploadBandwidthChange,
+                        keyboardType = KeyboardType.Decimal,
                     )
                     AdminNumberField(
-                        label = "用户下载上限（Kbps）",
+                        label = "用户下载上限（MB/s）",
                         value = uiState.maxUserDownloadBandwidthKbpsDraft,
                         onValueChange = onMaxUserDownloadBandwidthChange,
+                        keyboardType = KeyboardType.Decimal,
                     )
                     AdminNumberField(
                         label = "单文件上传上限（MB）",
@@ -197,13 +200,14 @@ private fun AdminNumberField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Number,
 ) {
-    OutlinedTextField(
+    ShellFormTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp),

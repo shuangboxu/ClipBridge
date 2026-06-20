@@ -101,8 +101,8 @@ class AdminUsersViewModel(
                 dialogMode = AdminUserDialogMode.Edit,
                 selectedUserId = user.id,
                 storageQuotaMbDraft = (user.storageQuotaBytes / MB).toString(),
-                uploadBandwidthKbpsDraft = user.uploadBandwidthKbps.toString(),
-                downloadBandwidthKbpsDraft = user.downloadBandwidthKbps.toString(),
+                uploadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(user.uploadBandwidthKbps),
+                downloadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(user.downloadBandwidthKbps),
                 isAdminDraft = user.isAdmin,
                 errorMessage = null,
             )
@@ -121,8 +121,8 @@ class AdminUsersViewModel(
                 dialogMode = AdminUserDialogMode.Delete,
                 selectedUserId = user.id,
                 storageQuotaMbDraft = (user.storageQuotaBytes / MB).toString(),
-                uploadBandwidthKbpsDraft = user.uploadBandwidthKbps.toString(),
-                downloadBandwidthKbpsDraft = user.downloadBandwidthKbps.toString(),
+                uploadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(user.uploadBandwidthKbps),
+                downloadBandwidthKbpsDraft = bandwidthKbpsToMbDraft(user.downloadBandwidthKbps),
                 isAdminDraft = user.isAdmin,
                 errorMessage = null,
             )
@@ -167,13 +167,13 @@ class AdminUsersViewModel(
         }
 
         val storageQuotaMb = _uiState.value.storageQuotaMbDraft.trim().toLongOrNull()
-        val uploadBandwidth = _uiState.value.uploadBandwidthKbpsDraft.trim().toIntOrNull()
-        val downloadBandwidth = _uiState.value.downloadBandwidthKbpsDraft.trim().toIntOrNull()
+        val uploadBandwidth = bandwidthMbDraftToKbpsOrNull(_uiState.value.uploadBandwidthKbpsDraft)
+        val downloadBandwidth = bandwidthMbDraftToKbpsOrNull(_uiState.value.downloadBandwidthKbpsDraft)
 
         val validationMessage = when {
             storageQuotaMb == null || storageQuotaMb <= 0L -> "存储配额必须是大于 0 的整数 MB"
-            uploadBandwidth == null || uploadBandwidth <= 0 -> "上传带宽必须是大于 0 的整数 Kbps"
-            downloadBandwidth == null || downloadBandwidth <= 0 -> "下载带宽必须是大于 0 的整数 Kbps"
+            uploadBandwidth == null -> "上传带宽必须是大于 0 的数字 MB/s"
+            downloadBandwidth == null -> "下载带宽必须是大于 0 的数字 MB/s"
             else -> null
         }
         if (validationMessage != null) {

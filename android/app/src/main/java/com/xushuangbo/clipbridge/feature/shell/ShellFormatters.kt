@@ -3,6 +3,8 @@ package com.xushuangbo.clipbridge.feature.shell
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.roundToInt
 
 internal fun formatShellBytes(value: Long): String {
     if (value <= 0L) {
@@ -25,16 +27,41 @@ internal fun formatShellBytes(value: Long): String {
     }
 }
 
-internal fun formatShellKbps(value: Int): String {
+private const val BANDWIDTH_BASE = 1024.0
+
+private fun trimBandwidthText(raw: String): String {
+    return raw.trimEnd('0').trimEnd('.')
+}
+
+private fun formatBandwidthText(value: Double): String {
+    return trimBandwidthText(String.format(Locale.US, "%.3f", value))
+}
+
+internal fun formatShellBandwidth(value: Int): String {
     if (value <= 0) {
-        return "0 Kbps"
-    }
-    if (value < 1024) {
-        return "$value Kbps"
+        return "0 MB/s"
     }
 
-    val mega = 1024.0
-    return String.format("%.1f Mbps", value / mega)
+    return "${formatBandwidthText(value / BANDWIDTH_BASE)} MB/s"
+}
+
+internal fun bandwidthKbpsToMbDraft(value: Int): String {
+    if (value <= 0) {
+        return ""
+    }
+
+    return formatBandwidthText(value / BANDWIDTH_BASE)
+}
+
+internal fun bandwidthMbDraftToKbpsOrNull(value: String): Int? {
+    val normalized = value.trim().toDoubleOrNull() ?: return null
+    if (normalized <= 0.0) {
+        return null
+    }
+
+    // 中文注释：接口字段名仍然是 kbps，但服务端历史上一直按 KB/s 解释。
+    // 这里统一把页面输入的 MB/s 换算回旧字段，避免改动现有接口契约。
+    return (normalized * BANDWIDTH_BASE).roundToInt().coerceAtLeast(1)
 }
 
 internal fun formatShellLocalDateTime(
