@@ -1,6 +1,7 @@
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, ConfigurationConstant, UIAbility, Want, common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { ClipboardSyncRuntime } from '../core/ClipboardSyncRuntime';
 
 const DOMAIN = 0x0000;
 
@@ -44,5 +45,23 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
+
+    // 中文注释：当前鸿蒙端还没有接入像 Android 那样的常驻剪贴板服务，
+    // 所以这里先补一个“退到后台时立即尝试上传一次”的链路，至少保证用户离开应用前能带走最新内容。
+    const syncRuntime = new ClipboardSyncRuntime(this.context as common.UIAbilityContext);
+    syncRuntime.uploadClipboardIfNeeded()
+      .then((result) => {
+        hilog.info(
+          DOMAIN,
+          'testTag',
+          'Background clipboard sync attempted=%{public}s uploaded=%{public}s reason=%{public}s',
+          String(result.attempted),
+          String(result.uploaded),
+          result.reason,
+        );
+      })
+      .catch((error: Object) => {
+        hilog.error(DOMAIN, 'testTag', 'Background clipboard sync failed: %{public}s', JSON.stringify(error));
+      });
   }
 }

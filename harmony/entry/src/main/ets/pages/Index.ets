@@ -2,6 +2,7 @@ import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit'
 import { promptAction } from '@kit.ArkUI'
 import { pasteboard } from '@kit.BasicServicesKit'
 import { ApiClient } from '../core/ApiClient'
+import { ClipboardSyncRuntime } from '../core/ClipboardSyncRuntime'
 import { FileTransfer } from '../core/FileTransfer'
 import { formatBytes, formatKbps, formatTime, publicShareLink, remainingSecondsText, statusLabel } from '../core/Formatters'
 import {
@@ -54,6 +55,13 @@ const PAGE_SIZE = 20
 const PULL_LIMIT = 50
 const PAGE_PADDING = 16
 const PAGE_SPACE = 12
+const CONTENT_PADDING = 18
+const CONTENT_SPACE = 16
+const PANEL_RADIUS = 24
+const HOME_PAGE_PADDING = 20
+const HOME_PAGE_SPACE = 18
+const HOME_SYNC_HERO_SIZE = 220
+const HOME_SYNC_IMAGE_SIZE = 158
 const READ_PASTEBOARD_PERMISSION = 'ohos.permission.READ_PASTEBOARD'
 
 const COLOR_BACKGROUND = '#F5F7FA'
@@ -133,7 +141,13 @@ struct Index {
   private sessionStore?: SessionStore
   private shareRulesStore?: ShareRulesStore
   private apiClient?: ApiClient
+  private clipboardSyncRuntime?: ClipboardSyncRuntime
   private fileTransfer?: FileTransfer
+  private clipboardUpdateListener?: () => void
+  private clipboardObserverRegistered: boolean = false
+  private clipboardAutoSyncRunning: boolean = false
+  private ignoreNextClipboardUpdate: boolean = false
+  private lastAutoUploadedClipboardText: string = ''
   private initialized: boolean = false
 
   @State bootLoading: boolean = true
@@ -151,6 +165,7 @@ struct Index {
   @State currentSession: StoredSession = emptySession()
   @State syncEnabled: boolean = false
   @State activeTab: MainTab = MainTab.Home
+  @State activeTabIndex: number = 0
   @State detailPage: DetailPage = DetailPage.None
 
   @State homeManualText: string = ''
@@ -180,6 +195,7 @@ struct Index {
   @State files: FileRecord[] = []
   @State filesLoading: boolean = false
   @State filesError: string = ''
+  @State filesSearchQuery: string = ''
   @State filesPage: number = 1
   @State filesTotalPages: number = 0
   @State filesTotalFiles: number = 0
@@ -254,6 +270,10 @@ struct Index {
 
   aboutToAppear(): void {
     this.runAsync(() => this.initializeApp())
+  }
+
+  aboutToDisappear(): void {
+    this.unregisterClipboardObserver()
   }
 
   build() {
@@ -407,7 +427,7 @@ struct Index {
         .alignItems(HorizontalAlign.Start)
 
         if (this.detailPage === DetailPage.None) {
-          Text(this.syncEnabled ? '手动同步已开启' : '手动同步已关闭')
+          Text(this.syncEnabled ? '同步已开启' : '同步已关闭')
             .fontSize(12)
             .fontColor(this.syncEnabled ? COLOR_ACCENT : COLOR_SUBTEXT)
         }
@@ -433,16 +453,13 @@ struct Index {
         .backgroundColor(COLOR_BORDER)
 
       Row({ space: 8 }) {
-        this.TabButton('首页', this.activeTab === MainTab.Home, () => {
+        this.TabButton('首页', () => {
           this.selectTab(MainTab.Home)
         })
-        this.TabButton('历史', this.activeTab === MainTab.History, () => {
+        this.TabButton('历史', () => {
           this.selectTab(MainTab.History)
         })
-        this.TabButton('AI', this.activeTab === MainTab.Ai, () => {
-          this.selectTab(MainTab.Ai)
-        })
-        this.TabButton('设置', this.activeTab === MainTab.Settings, () => {
+        this.TabButton('设置', () => {
           this.selectTab(MainTab.Settings)
         })
       }
@@ -454,25 +471,36 @@ struct Index {
   }
 
   @Builder
-  private TabButton(label: string, selected: boolean, onClick: () => void) {
-    Button(label)
-      .layoutWeight(1)
-      .height(40)
-      .backgroundColor(selected ? COLOR_PRIMARY : COLOR_CARD_MUTED)
-      .fontColor(selected ? '#FFFFFF' : COLOR_TEXT)
-      .onClick(onClick)
+  private TabButton(label: string, onClick: () => void) {
+    Column({ space: 6 }) {
+      Row() {}
+        .width(24)
+        .height(4)
+        .borderRadius(2)
+        .backgroundColor('#00000000')
+
+      Text(label)
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_SUBTEXT)
+    }
+    .layoutWeight(1)
+    .height(52)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(COLOR_CARD)
+    .borderRadius(16)
+    .onClick(onClick)
   }
 
   @Builder
   private CurrentPage() {
     if (this.detailPage !== DetailPage.None) {
       this.DetailPageContent()
-    } else if (this.activeTab === MainTab.Home) {
+    } else if (this.activeTabIndex === 0) {
       this.HomePage()
-    } else if (this.activeTab === MainTab.History) {
+    } else if (this.activeTabIndex === 1) {
       this.HistoryPage()
-    } else if (this.activeTab === MainTab.Ai) {
-      this.AiPage()
     } else {
       this.SettingsPage()
     }
@@ -507,161 +535,249 @@ struct Index {
 
   @Builder
   private HomePage() {
+    // 中文注释：首页保留鸿蒙端自己的手动同步工具，但整体层级尽量贴近 Android 首页，
+    // 这样多端切换时用户先看到相同的同步面板和快捷入口。
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
-        Column({ space: 10 }) {
-          Row({ space: 12 }) {
-            Column({ space: 4 }) {
-              Text(this.currentSession.username)
-                .fontSize(22)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(COLOR_TEXT)
-              Text(this.currentSession.isAdmin ? '管理员账号' : '普通账号')
-                .fontSize(13)
-                .fontColor(COLOR_SUBTEXT)
-            }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-
-            Toggle({ type: ToggleType.Switch, isOn: this.syncEnabled })
-              .selectedColor(COLOR_ACCENT)
-              .onChange((value: boolean) => {
-                this.syncEnabled = value
-                this.sessionStore?.saveSyncEnabled(value)
-              })
-          }
-
-          Text('鸿蒙端当前以“前台手动同步”为主：支持上传文本、补拉远端内容、写回系统剪贴板。')
-            .fontSize(13)
-            .fontColor(COLOR_SUBTEXT)
-        }
-        .width('100%')
-        .padding(16)
-        .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
-        .borderWidth(1)
-        .borderColor(COLOR_BORDER)
-
-        Column({ space: 8 }) {
-          Text('当前账号概览')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT)
-          this.KeyValueRow('设备名称', this.currentSession.deviceName)
-          this.KeyValueRow('存储配额', formatBytes(this.currentSession.storageQuotaBytes))
-          this.KeyValueRow('已用空间', formatBytes(this.currentSession.storageUsedBytes))
-          this.KeyValueRow('上传带宽', formatKbps(this.currentSession.uploadBandwidthKbps))
-          this.KeyValueRow('下载带宽', formatKbps(this.currentSession.downloadBandwidthKbps))
-          this.KeyValueRow('已 ACK 序号', `${this.historyAckSeq}`)
-        }
-        .width('100%')
-        .padding(16)
-        .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
-        .borderWidth(1)
-        .borderColor(COLOR_BORDER)
-
-        Column({ space: 8 }) {
-          Text('快捷入口')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT)
-          Row({ space: 8 }) {
-            Button('文件中心')
-              .layoutWeight(1)
-              .backgroundColor(COLOR_PRIMARY_SOFT)
-              .fontColor(COLOR_PRIMARY)
-              .onClick(() => {
-                this.openDetailPage(DetailPage.Files)
-              })
-            Button('分享管理')
-              .layoutWeight(1)
-              .backgroundColor(COLOR_ACCENT_SOFT)
-              .fontColor(COLOR_ACCENT)
-              .onClick(() => {
-                this.openDetailPage(DetailPage.Shares)
-              })
-          }
-        }
-        .width('100%')
-        .padding(16)
-        .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
-        .borderWidth(1)
-        .borderColor(COLOR_BORDER)
-
-        Column({ space: 10 }) {
-          Text('同步中心')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(COLOR_TEXT)
-          TextArea({ text: this.homeManualText, placeholder: '手动输入一段文本后上传到云端剪贴板' })
-            .height(100)
-            .backgroundColor(COLOR_CARD_MUTED)
-            .borderRadius(8)
-            .onChange((value: string) => {
-              this.homeManualText = value
-            })
-
-          Row({ space: 8 }) {
-            Button(this.homeActionLoading ? '处理中...' : '上传输入框文本')
-              .layoutWeight(1)
-              .backgroundColor(COLOR_PRIMARY)
-              .fontColor('#FFFFFF')
-              .enabled(!this.homeActionLoading)
-              .onClick(() => {
-                this.runAsync(() => this.uploadManualText())
-              })
-            Button('读取系统剪贴板上传')
-              .layoutWeight(1)
-              .backgroundColor(COLOR_PRIMARY_SOFT)
-              .fontColor(COLOR_PRIMARY)
-              .enabled(!this.homeActionLoading)
-              .onClick(() => {
-                this.runAsync(() => this.uploadSystemClipboard())
-              })
-          }
-
-          Row({ space: 8 }) {
-            Button('补拉远端最新文本')
-              .layoutWeight(1)
-              .backgroundColor(COLOR_ACCENT_SOFT)
-              .fontColor(COLOR_ACCENT)
-              .enabled(!this.homeActionLoading)
-              .onClick(() => {
-                this.runAsync(() => this.pullRemoteClipboard())
-              })
-            Button('刷新历史')
-              .layoutWeight(1)
-              .backgroundColor(COLOR_CARD_MUTED)
-              .fontColor(COLOR_TEXT)
-              .enabled(!this.homeActionLoading)
-              .onClick(() => {
-                this.runAsync(() => this.loadHistory(true))
-              })
-          }
-        }
-        .width('100%')
-        .padding(16)
-        .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
-        .borderWidth(1)
-        .borderColor(COLOR_BORDER)
+      Column({ space: HOME_PAGE_SPACE }) {
+        this.HomeSyncPanel()
+        this.HomeShortcutPanel()
+        this.HomeOverviewPanel()
+        this.HomeSyncToolsPanel()
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding({ left: HOME_PAGE_PADDING, right: HOME_PAGE_PADDING, top: 18, bottom: 18 })
     }
     .width('100%')
     .layoutWeight(1)
   }
 
   @Builder
+  private HomeSyncPanel() {
+    Column({ space: 14 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Row() {}
+          .width(HOME_SYNC_HERO_SIZE)
+          .height(HOME_SYNC_HERO_SIZE)
+          .borderRadius(HOME_SYNC_HERO_SIZE / 2)
+          .backgroundColor('#FFFFFF')
+        Image(this.syncEnabled ? $r('app.media.sync_toggle_on') : $r('app.media.sync_toggle_off'))
+          .width(HOME_SYNC_IMAGE_SIZE)
+          .height(HOME_SYNC_IMAGE_SIZE)
+          .objectFit(ImageFit.Contain)
+      }
+      .width('100%')
+      .padding({ top: 4, bottom: 6 })
+      .onClick(() => {
+        this.runAsync(() => this.toggleHomeSyncEnabled())
+      })
+
+      Text(this.syncEnabled ? '同步已开启' : '同步已关闭')
+        .width('100%')
+        .fontSize(24)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.syncEnabled ? COLOR_PRIMARY : COLOR_TEXT)
+        .textAlign(TextAlign.Center)
+
+      Text(this.syncEnabled
+        ? '已启用前台自动上传，退到后台时也会尝试补传当前剪贴板。'
+        : '点击上方图标开启同步，随后复制文本时会自动上传到云端剪贴板。')
+        .width('100%')
+        .fontSize(13)
+        .fontColor(COLOR_SUBTEXT)
+        .textAlign(TextAlign.Center)
+
+      Text('点击中间图标即可切换状态')
+        .fontSize(12)
+        .fontColor(this.syncEnabled ? COLOR_PRIMARY : COLOR_SUBTEXT)
+    }
+    .width('100%')
+    .padding({ left: 20, right: 20, top: 24, bottom: 24 })
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.syncEnabled ? COLOR_PRIMARY_SOFT : COLOR_CARD)
+    .borderRadius(28)
+    .borderWidth(1)
+    .borderColor(this.syncEnabled ? '#D7E6FF' : COLOR_BORDER)
+  }
+
+  @Builder
+  private HomeShortcutPanel() {
+    Column({ space: 14 }) {
+      Text('快捷入口')
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_TEXT)
+
+      Row({ space: 12 }) {
+        this.HomeShortcutCard(
+          '文件',
+          '上传、下载和管理文件记录',
+          COLOR_PRIMARY_SOFT,
+          COLOR_PRIMARY,
+          () => {
+            this.openDetailPage(DetailPage.Files)
+          },
+        )
+        this.HomeShortcutCard(
+          '分享',
+          '创建公开链接并查看分享记录',
+          COLOR_ACCENT_SOFT,
+          COLOR_ACCENT,
+          () => {
+            this.openDetailPage(DetailPage.Shares)
+          },
+        )
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(20)
+    .backgroundColor(COLOR_CARD)
+    .borderRadius(24)
+    .borderWidth(1)
+    .borderColor(COLOR_BORDER)
+  }
+
+  @Builder
+  private HomeShortcutCard(
+    title: string,
+    description: string,
+    backgroundColor: string,
+    accentColor: string,
+    onClick: () => void,
+  ) {
+    Column({ space: 10 }) {
+      Blank()
+        .width(34)
+        .height(6)
+        .borderRadius(3)
+        .backgroundColor(accentColor)
+
+      Text(title)
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_TEXT)
+
+      Text(description)
+        .fontSize(12)
+        .fontColor(COLOR_SUBTEXT)
+
+      Text('进入')
+        .fontSize(12)
+        .fontColor(accentColor)
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Start)
+    .padding(16)
+    .backgroundColor(backgroundColor)
+    .borderRadius(18)
+    .onClick(onClick)
+  }
+
+  @Builder
+  private HomeOverviewPanel() {
+    Column({ space: 10 }) {
+      Text('当前账号概览')
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_TEXT)
+
+      this.KeyValueRow('用户名', this.currentSession.username.length > 0 ? this.currentSession.username : '未登录')
+      this.KeyValueRow('账号角色', this.currentSession.isAdmin ? '管理员' : '普通用户')
+      this.KeyValueRow('设备名称', this.currentSession.deviceName)
+      this.KeyValueRow('存储配额', formatBytes(this.currentSession.storageQuotaBytes))
+      this.KeyValueRow('已用空间', formatBytes(this.currentSession.storageUsedBytes))
+      this.KeyValueRow('上传带宽', formatKbps(this.currentSession.uploadBandwidthKbps))
+      this.KeyValueRow('下载带宽', formatKbps(this.currentSession.downloadBandwidthKbps))
+      this.KeyValueRow('已 ACK 序号', `${this.historyAckSeq}`)
+    }
+    .width('100%')
+    .padding(20)
+    .backgroundColor(COLOR_CARD)
+    .borderRadius(24)
+    .borderWidth(1)
+    .borderColor(COLOR_BORDER)
+  }
+
+  @Builder
+  private HomeSyncToolsPanel() {
+    Column({ space: 10 }) {
+      Text('手动同步工具')
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_TEXT)
+
+      Text('这里保留鸿蒙端当前可用的前台同步操作，方便在首页直接调试和验证同步流程。')
+        .fontSize(13)
+        .fontColor(COLOR_SUBTEXT)
+
+      TextArea({ text: this.homeManualText, placeholder: '手动输入一段文本后上传到云端剪贴板' })
+        .height(100)
+        .backgroundColor(COLOR_CARD_MUTED)
+        .borderRadius(8)
+        .onChange((value: string) => {
+          this.homeManualText = value
+        })
+
+      Row({ space: 8 }) {
+        Button(this.homeActionLoading ? '处理中...' : '上传输入框文本')
+          .layoutWeight(1)
+          .backgroundColor(COLOR_PRIMARY)
+          .fontColor('#FFFFFF')
+          .enabled(!this.homeActionLoading)
+          .onClick(() => {
+            this.runAsync(() => this.uploadManualText())
+          })
+        Button('读取系统剪贴板上传')
+          .layoutWeight(1)
+          .backgroundColor(COLOR_PRIMARY_SOFT)
+          .fontColor(COLOR_PRIMARY)
+          .enabled(!this.homeActionLoading)
+          .onClick(() => {
+            this.runAsync(() => this.uploadSystemClipboard())
+          })
+      }
+
+      Row({ space: 8 }) {
+        Button('补拉远端最新文本')
+          .layoutWeight(1)
+          .backgroundColor(COLOR_ACCENT_SOFT)
+          .fontColor(COLOR_ACCENT)
+          .enabled(!this.homeActionLoading)
+          .onClick(() => {
+            this.runAsync(() => this.pullRemoteClipboard())
+          })
+        Button('刷新历史')
+          .layoutWeight(1)
+          .backgroundColor(COLOR_CARD_MUTED)
+          .fontColor(COLOR_TEXT)
+          .enabled(!this.homeActionLoading)
+          .onClick(() => {
+            this.runAsync(() => this.loadHistory(true))
+          })
+      }
+    }
+    .width('100%')
+    .padding(20)
+    .backgroundColor(COLOR_CARD)
+    .borderRadius(24)
+    .borderWidth(1)
+    .borderColor(COLOR_BORDER)
+  }
+
+  @Builder
   private HistoryPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.historyError, COLOR_DANGER_SOFT, COLOR_DANGER)
 
         Column({ space: 10 }) {
+          Text('历史记录')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
+          Text('支持搜索当前已加载的历史，并手动上传文本到历史记录。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           Row({ space: 8 }) {
             this.InputFieldCompact('搜索历史内容', this.historySearchQuery, (value: string) => {
               this.historySearchQuery = value
@@ -678,7 +794,7 @@ struct Index {
           TextArea({ text: this.historyDraftText, placeholder: '直接在这里输入文本，也可以上传到历史记录' })
             .height(88)
             .backgroundColor(COLOR_CARD_MUTED)
-            .borderRadius(8)
+            .borderRadius(14)
             .onChange((value: string) => {
               this.historyDraftText = value
             })
@@ -703,20 +819,20 @@ struct Index {
           }
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         if (this.historyLoading && this.historyItems.length === 0) {
           this.MessageCard('正在加载历史记录...', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
         } else if (this.filteredHistoryItems().length === 0) {
-          this.MessageCard('暂无历史记录', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
+          this.MessageCard('暂无历史记录，可以先手动上传一段文本。', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
         } else {
-          Column({ space: 10 }) {
+          Column({ space: 12 }) {
             ForEach(this.filteredHistoryItems(), (item: ClipboardItem) => {
-              Column({ space: 8 }) {
+              Column({ space: 10 }) {
                 Row({ space: 8 }) {
                   Text(`#${item.seq}`)
                     .fontSize(14)
@@ -730,7 +846,7 @@ struct Index {
                     .fontSize(12)
                     .fontColor(COLOR_SUBTEXT)
                 }
-                Text(item.textContent)
+                Text(item.textContent.length > 0 ? item.textContent : '(空文本)')
                   .fontSize(14)
                   .fontColor(COLOR_TEXT)
                   .maxLines(6)
@@ -752,9 +868,9 @@ struct Index {
                 }
               }
               .width('100%')
-              .padding(16)
+              .padding(18)
               .backgroundColor(COLOR_CARD)
-              .borderRadius(10)
+              .borderRadius(PANEL_RADIUS)
               .borderWidth(1)
               .borderColor(COLOR_BORDER)
             }, (item: ClipboardItem) => item.id)
@@ -774,7 +890,7 @@ struct Index {
         }
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -796,7 +912,7 @@ struct Index {
   @Builder
   private SettingsPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.SettingSection('账号', [
           { title: '账号信息', page: DetailPage.Account },
           { title: '安全', page: DetailPage.Security },
@@ -807,8 +923,6 @@ struct Index {
         this.SettingSection('通用', [
           { title: '分享规则', page: DetailPage.ShareRules },
           { title: '历史设置', page: DetailPage.HistorySettings },
-          { title: '文件中心', page: DetailPage.Files },
-          { title: '分享管理', page: DetailPage.Shares },
         ])
 
         if (this.currentSession.isAdmin) {
@@ -818,6 +932,8 @@ struct Index {
             { title: '审批', page: DetailPage.AdminReviews },
           ])
         }
+
+        this.AboutSection()
 
         Column({ space: 10 }) {
           Button('退出登录')
@@ -829,14 +945,14 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -844,19 +960,25 @@ struct Index {
 
   @Builder
   private SettingSection(title: string, entries: SettingLink[]) {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Text(title)
-        .fontSize(16)
+        .fontSize(14)
         .fontWeight(FontWeight.Medium)
-        .fontColor(COLOR_TEXT)
+        .fontColor(COLOR_SUBTEXT)
       Column({ space: 0 }) {
         ForEach(entries, (entry: SettingLink, index: number) => {
           Column() {
-            Button(entry.title)
+            Row({ space: 12 }) {
+              Text(entry.title)
+                .layoutWeight(1)
+                .fontSize(16)
+                .fontColor(COLOR_TEXT)
+              Text('>')
+                .fontSize(14)
+                .fontColor(COLOR_SUBTEXT)
+            }
               .width('100%')
-              .height(46)
-              .backgroundColor(COLOR_CARD)
-              .fontColor(COLOR_TEXT)
+              .padding({ left: 18, right: 18, top: 18, bottom: 18 })
               .onClick(() => {
                 this.openDetailPage(entry.page)
               })
@@ -871,7 +993,7 @@ struct Index {
       }
       .width('100%')
       .backgroundColor(COLOR_CARD)
-      .borderRadius(10)
+      .borderRadius(PANEL_RADIUS)
       .borderWidth(1)
       .borderColor(COLOR_BORDER)
     }
@@ -879,12 +1001,60 @@ struct Index {
   }
 
   @Builder
+  private AboutSection() {
+    Column({ space: 10 }) {
+      Text('关于')
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(COLOR_SUBTEXT)
+
+      Column({ space: 0 }) {
+        this.AboutRow('GitHub 仓库', 'github.com/shuangboxu/ClipBridge')
+        Blank()
+          .width('100%')
+          .height(1)
+          .backgroundColor(COLOR_BORDER)
+        this.AboutRow('Windows 下载', '即将开放')
+        Blank()
+          .width('100%')
+          .height(1)
+          .backgroundColor(COLOR_BORDER)
+        this.AboutRow('Android 下载', '即将开放')
+      }
+      .width('100%')
+      .backgroundColor(COLOR_CARD)
+      .borderRadius(PANEL_RADIUS)
+      .borderWidth(1)
+      .borderColor(COLOR_BORDER)
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private AboutRow(title: string, value: string) {
+    Row({ space: 12 }) {
+      Text(title)
+        .layoutWeight(1)
+        .fontSize(16)
+        .fontColor(COLOR_TEXT)
+      Text(value)
+        .fontSize(13)
+        .fontColor(COLOR_SUBTEXT)
+    }
+    .width('100%')
+    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+  }
+
+  @Builder
   private AccountPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
-        Column({ space: 8 }) {
+      Column({ space: CONTENT_SPACE }) {
+        Column({ space: 10 }) {
+          Text('账号信息')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
           this.KeyValueRow('用户名', this.currentSession.username)
-          this.KeyValueRow('当前设备 ID', this.currentSession.currentDeviceId)
           this.KeyValueRow('设备名称', this.currentSession.deviceName)
           this.KeyValueRow('账号角色', this.currentSession.isAdmin ? '管理员' : '普通用户')
           this.KeyValueRow('存储配额', formatBytes(this.currentSession.storageQuotaBytes))
@@ -893,17 +1063,20 @@ struct Index {
           this.KeyValueRow('下载带宽', formatKbps(this.currentSession.downloadBandwidthKbps))
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         Column({ space: 10 }) {
-          Text('服务地址')
-            .fontSize(16)
+          Text('服务器地址')
+            .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor(COLOR_TEXT)
+          Text('修改后会清理当前登录态，并要求重新登录。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           this.InputField('服务地址', '保存后会清理登录态并重新登录', this.serviceAddressDraft, (value: string) => {
             this.serviceAddressDraft = value
           })
@@ -916,14 +1089,14 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -932,8 +1105,15 @@ struct Index {
   @Builder
   private SecurityPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         Column({ space: 10 }) {
+          Text('修改密码')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
+          Text('密码更新后，其它设备需要重新登录。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           this.PasswordField('当前密码', '请输入当前密码', this.securityCurrentPassword, (value: string) => {
             this.securityCurrentPassword = value
           })
@@ -953,14 +1133,14 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -969,55 +1149,82 @@ struct Index {
   @Builder
   private DevicesPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.devicesError, COLOR_DANGER_SOFT, COLOR_DANGER)
 
-        Row({ space: 8 }) {
-          Button(this.devicesLoading ? '刷新中...' : '刷新设备列表')
+        Column({ space: 12 }) {
+          Row({ space: 12 }) {
+            Column({ space: 4 }) {
+              Text('设备概览')
+                .fontSize(18)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(COLOR_TEXT)
+              Text('这里展示当前账号下登记的设备，以及最近活跃情况。')
+                .fontSize(13)
+                .fontColor(COLOR_SUBTEXT)
+            }
             .layoutWeight(1)
-            .backgroundColor(COLOR_PRIMARY_SOFT)
-            .fontColor(COLOR_PRIMARY)
-            .enabled(!this.devicesLoading)
-            .onClick(() => {
-              this.runAsync(() => this.loadDevices())
-            })
+            .alignItems(HorizontalAlign.Start)
+
+            Button(this.devicesLoading ? '刷新中...' : '刷新')
+              .backgroundColor(COLOR_PRIMARY_SOFT)
+              .fontColor(COLOR_PRIMARY)
+              .enabled(!this.devicesLoading)
+              .onClick(() => {
+                this.runAsync(() => this.loadDevices())
+              })
+          }
+
+          this.KeyValueRow('总设备', `${this.devices.length}`)
+          this.KeyValueRow('在线', `${this.onlineDeviceCount()}`)
+          this.KeyValueRow('最近活动', this.latestDeviceSeenText())
         }
+        .width('100%')
+        .padding(18)
+        .backgroundColor(COLOR_CARD)
+        .borderRadius(PANEL_RADIUS)
+        .borderWidth(1)
+        .borderColor(COLOR_BORDER)
 
         if (this.devices.length === 0 && !this.devicesLoading) {
-          this.MessageCard('暂无设备记录', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
+          this.MessageCard('当前账号下还没有可显示的设备记录。', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
         } else {
-          Column({ space: 10 }) {
+          Column({ space: 12 }) {
             ForEach(this.devices, (device: DeviceRecord) => {
-              Column({ space: 8 }) {
+              Column({ space: 10 }) {
                 Row({ space: 8 }) {
-                  Text(device.deviceName)
-                    .fontSize(16)
+                  Text(device.deviceName.length > 0 ? device.deviceName : 'unnamed-device')
+                    .fontSize(18)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(COLOR_TEXT)
+                  Text(device.isActive ? '在线' : '已下线')
+                    .fontSize(12)
+                    .fontColor(device.isActive ? COLOR_ACCENT : COLOR_WARN)
                   if (device.id === this.currentSession.currentDeviceId) {
                     Text('当前设备')
                       .fontSize(12)
-                      .fontColor(COLOR_ACCENT)
+                      .fontColor(COLOR_PRIMARY)
                   }
                 }
+
                 this.KeyValueRow('平台', device.platform)
                 this.KeyValueRow('设备 ID', device.id)
                 this.KeyValueRow('最近在线', formatTime(device.lastSeenAt))
-                this.KeyValueRow('状态', device.isActive ? '在线' : '已下线')
+                this.KeyValueRow('创建时间', formatTime(device.createdAt))
 
                 this.InputFieldCompact('修改设备名', this.deviceRenameDraft(device), (value: string) => {
                   this.updateDeviceRenameDraft(device.id, value)
                 })
 
                 Row({ space: 8 }) {
-                  Button('保存设备名')
+                  Button('保存名称')
                     .layoutWeight(1)
                     .backgroundColor(COLOR_PRIMARY_SOFT)
                     .fontColor(COLOR_PRIMARY)
                     .onClick(() => {
                       this.runAsync(() => this.renameDevice(device.id))
                     })
-                  Button(this.devicePendingOfflineId === device.id ? '再次确认下线' : '强制下线')
+                  Button(this.devicePendingOfflineId === device.id ? '确认下线' : '强制下线')
                     .layoutWeight(1)
                     .backgroundColor(COLOR_DANGER_SOFT)
                     .fontColor(COLOR_DANGER)
@@ -1032,18 +1239,18 @@ struct Index {
                 }
               }
               .width('100%')
-              .padding(16)
+              .padding(18)
               .backgroundColor(COLOR_CARD)
-              .borderRadius(10)
+              .borderRadius(PANEL_RADIUS)
               .borderWidth(1)
-              .borderColor(device.id === this.currentSession.currentDeviceId ? COLOR_ACCENT : COLOR_BORDER)
+              .borderColor(device.id === this.currentSession.currentDeviceId ? '#CFE0FF' : COLOR_BORDER)
             }, (device: DeviceRecord) => device.id)
           }
           .width('100%')
         }
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1052,54 +1259,69 @@ struct Index {
   @Builder
   private FilesPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.filesError, COLOR_DANGER_SOFT, COLOR_DANGER)
 
-        Column({ space: 8 }) {
+        Column({ space: 12 }) {
+          Text('文件中心')
+            .fontSize(20)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
+          Text('支持搜索当前已加载的文件记录，并直接进行下载、重命名和删除。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
+          this.InputFieldCompact('本地搜索文件名、类型或来源设备', this.filesSearchQuery, (value: string) => {
+            this.filesSearchQuery = value
+          })
           this.KeyValueRow('文件总数', `${this.filesTotalFiles}`)
           this.KeyValueRow('文件总大小', formatBytes(this.filesTotalBytes))
           this.KeyValueRow('单文件上限', formatBytes(this.filesMaxUploadBytes))
+
+          Row({ space: 8 }) {
+            Button('选择文件上传')
+              .layoutWeight(1)
+              .backgroundColor(COLOR_PRIMARY)
+              .fontColor('#FFFFFF')
+              .enabled(!this.filesLoading)
+              .onClick(() => {
+                this.runAsync(() => this.uploadFile())
+              })
+            Button(this.filesLoading ? '刷新中...' : '刷新')
+              .layoutWeight(1)
+              .backgroundColor(COLOR_PRIMARY_SOFT)
+              .fontColor(COLOR_PRIMARY)
+              .enabled(!this.filesLoading)
+              .onClick(() => {
+                this.runAsync(() => this.loadFiles(this.filesPage))
+              })
+          }
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
-        Row({ space: 8 }) {
-          Button('选择文件上传')
-            .layoutWeight(1)
-            .backgroundColor(COLOR_PRIMARY)
-            .fontColor('#FFFFFF')
-            .enabled(!this.filesLoading)
-            .onClick(() => {
-              this.runAsync(() => this.uploadFile())
-            })
-          Button('刷新')
-            .layoutWeight(1)
-            .backgroundColor(COLOR_PRIMARY_SOFT)
-            .fontColor(COLOR_PRIMARY)
-            .enabled(!this.filesLoading)
-            .onClick(() => {
-              this.runAsync(() => this.loadFiles(this.filesPage))
-            })
-        }
-
-        if (this.files.length === 0 && !this.filesLoading) {
-          this.MessageCard('暂无文件', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
+        if (this.filteredFiles().length === 0 && !this.filesLoading) {
+          this.MessageCard(
+            this.filesSearchQuery.trim().length > 0 ? '当前页没有匹配的文件记录' : '还没有文件记录',
+            COLOR_PRIMARY_SOFT,
+            COLOR_PRIMARY,
+          )
         } else {
-          Column({ space: 10 }) {
-            ForEach(this.files, (file: FileRecord) => {
-              Column({ space: 8 }) {
-                Text(file.originalName)
-                  .fontSize(16)
+          Column({ space: 12 }) {
+            ForEach(this.filteredFiles(), (file: FileRecord) => {
+              Column({ space: 10 }) {
+                Text(file.originalName.length > 0 ? file.originalName : '未命名文件')
+                  .fontSize(18)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(COLOR_TEXT)
-                this.KeyValueRow('大小', formatBytes(file.sizeBytes))
-                this.KeyValueRow('类型', file.contentType)
-                this.KeyValueRow('来源设备', file.originDeviceName)
-                this.KeyValueRow('上传时间', formatTime(file.createdAt))
+                Text(`${formatBytes(file.sizeBytes)} · ${formatTime(file.createdAt)}`)
+                  .fontSize(13)
+                  .fontColor(COLOR_SUBTEXT)
+                this.KeyValueRow('类型', file.contentType.length > 0 ? file.contentType : 'application/octet-stream')
+                this.KeyValueRow('来源设备', file.originDeviceName.length > 0 ? file.originDeviceName : '未知设备')
                 this.InputFieldCompact('重命名', this.fileRenameDraft(file), (value: string) => {
                   this.updateFileRenameDraft(file.id, value)
                 })
@@ -1133,9 +1355,9 @@ struct Index {
                 }
               }
               .width('100%')
-              .padding(16)
+              .padding(18)
               .backgroundColor(COLOR_CARD)
-              .borderRadius(10)
+              .borderRadius(PANEL_RADIUS)
               .borderWidth(1)
               .borderColor(COLOR_BORDER)
             }, (file: FileRecord) => file.id)
@@ -1167,7 +1389,7 @@ struct Index {
         }
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1176,10 +1398,17 @@ struct Index {
   @Builder
   private SharesPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.sharesError, COLOR_DANGER_SOFT, COLOR_DANGER)
 
         Column({ space: 10 }) {
+          Text('创建分享')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
+          Text('先选择分享类型和策略，再创建文本或文件分享。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           this.SegmentRow(this.buildShareComposeButtons())
 
           this.SegmentRow(this.buildShareStrategyButtons())
@@ -1194,7 +1423,7 @@ struct Index {
             TextArea({ text: this.shareTextInput, placeholder: '请输入要分享的文本内容' })
               .height(100)
               .backgroundColor(COLOR_CARD_MUTED)
-              .borderRadius(8)
+              .borderRadius(14)
               .onChange((value: string) => {
                 this.shareTextInput = value
               })
@@ -1227,13 +1456,17 @@ struct Index {
           }
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         Column({ space: 10 }) {
+          Text('分享记录')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
           this.SegmentRow(this.buildShareStatusButtons())
           Button(this.sharesLoading ? '刷新中...' : '刷新分享列表')
             .width('100%')
@@ -1245,21 +1478,21 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         if (this.shares.length === 0 && !this.sharesLoading) {
-          this.MessageCard('暂无分享记录', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
+          this.MessageCard('还没有分享记录，先创建一个文本分享或文件分享。', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
         } else {
-          Column({ space: 10 }) {
+          Column({ space: 12 }) {
             ForEach(this.shares, (share: ShareRecord) => {
-              Column({ space: 8 }) {
+              Column({ space: 10 }) {
                 Row({ space: 8 }) {
                   Text(share.contentKind === 'file' ? '文件分享' : '文本分享')
-                    .fontSize(16)
+                    .fontSize(18)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(COLOR_TEXT)
                   Text(statusLabel(share.status))
@@ -1302,9 +1535,9 @@ struct Index {
                 }
               }
               .width('100%')
-              .padding(16)
+              .padding(18)
               .backgroundColor(COLOR_CARD)
-              .borderRadius(10)
+              .borderRadius(PANEL_RADIUS)
               .borderWidth(1)
               .borderColor(COLOR_BORDER)
             }, (share: ShareRecord) => share.id)
@@ -1313,7 +1546,7 @@ struct Index {
         }
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1322,12 +1555,15 @@ struct Index {
   @Builder
   private ShareRulesPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         Column({ space: 10 }) {
-          Text('不过期规则')
-            .fontSize(16)
+          Text('不过期')
+            .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor(COLOR_TEXT)
+          Text('公开链接不会自动失效，需要你主动撤销。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           Toggle({ type: ToggleType.Switch, isOn: this.shareRules.never.allowCopyText })
             .selectedColor(COLOR_ACCENT)
             .onChange((value: boolean) => {
@@ -1338,17 +1574,20 @@ struct Index {
             .fontColor(COLOR_SUBTEXT)
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         Column({ space: 10 }) {
-          Text('定时过期规则')
-            .fontSize(16)
+          Text('过期')
+            .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor(COLOR_TEXT)
+          Text('这组规则会给文字分享加自动过期时间。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           this.SegmentRow(this.buildExpirePresetButtons())
           Toggle({ type: ToggleType.Switch, isOn: this.shareRules.expire.allowCopyText })
             .selectedColor(COLOR_ACCENT)
@@ -1357,17 +1596,20 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         Column({ space: 10 }) {
-          Text('一次性规则')
-            .fontSize(16)
+          Text('打开一次失效')
+            .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor(COLOR_TEXT)
+          Text('可以直接一次焚毁，也可以在首次打开后再走倒计时焚毁。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           Toggle({ type: ToggleType.Switch, isOn: this.shareRules.once.showCountdown })
             .selectedColor(COLOR_ACCENT)
             .onChange((value: boolean) => {
@@ -1386,9 +1628,9 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
@@ -1401,7 +1643,7 @@ struct Index {
           })
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1410,8 +1652,15 @@ struct Index {
   @Builder
   private HistorySettingsPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         Column({ space: 10 }) {
+          Text('历史保留策略')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
+          Text('保留天数填 0 表示不限时间，默认最多保留 1000 条。所有端共用同一套设置。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           this.InputField('保留天数', '0 表示不限时间', this.historyRetentionDaysInput, (value: string) => {
             this.historyRetentionDaysInput = value
           })
@@ -1428,13 +1677,20 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         Column({ space: 10 }) {
+          Text('立即清理')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
+          Text('如果你刚调整了规则，或者想立刻释放历史列表，可以直接执行下面的清理操作。')
+            .fontSize(13)
+            .fontColor(COLOR_SUBTEXT)
           this.KeyValueRow('最近更新时间', formatTime(this.historySettings.updatedAt))
           Button('清理超出保留天数的记录')
             .width('100%')
@@ -1454,14 +1710,14 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1470,33 +1726,63 @@ struct Index {
   @Builder
   private RequestsPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.requestsError, COLOR_DANGER_SOFT, COLOR_DANGER)
 
         Column({ space: 10 }) {
+          Row({ space: 12 }) {
+            Column({ space: 4 }) {
+              Text('当前额度')
+                .fontSize(18)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(COLOR_TEXT)
+              Text('申请提交后会进入管理员审核队列，审核通过后会立即生效。')
+                .fontSize(13)
+                .fontColor(COLOR_SUBTEXT)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Button(this.requestsLoading ? '刷新中...' : '刷新')
+              .backgroundColor(COLOR_PRIMARY_SOFT)
+              .fontColor(COLOR_PRIMARY)
+              .enabled(!this.requestsLoading)
+              .onClick(() => {
+                this.runAsync(() => this.loadRequests())
+              })
+          }
+          this.KeyValueRow('角色', this.currentSession.isAdmin ? '管理员' : '普通用户')
+          this.KeyValueRow('存储配额', formatBytes(this.currentSession.storageQuotaBytes))
+          this.KeyValueRow('已用空间', formatBytes(this.currentSession.storageUsedBytes))
+          this.KeyValueRow('剩余空间', formatBytes(this.currentSession.storageFreeBytes))
+          this.KeyValueRow('上传带宽', formatKbps(this.currentSession.uploadBandwidthKbps))
+          this.KeyValueRow('下载带宽', formatKbps(this.currentSession.downloadBandwidthKbps))
+          this.KeyValueRow('单文件上限', formatBytes(this.currentSession.maxUploadFileBytes))
+        }
+        .width('100%')
+        .padding(18)
+        .backgroundColor(COLOR_CARD)
+        .borderRadius(PANEL_RADIUS)
+        .borderWidth(1)
+        .borderColor(COLOR_BORDER)
+
+        Column({ space: 10 }) {
           Text('我的申请')
-            .fontSize(16)
+            .fontSize(18)
             .fontWeight(FontWeight.Medium)
             .fontColor(COLOR_TEXT)
           this.SegmentRow(this.buildRequestStatusButtons())
-          Button(this.requestsLoading ? '刷新中...' : '刷新申请记录')
-            .width('100%')
-            .backgroundColor(COLOR_CARD_MUTED)
-            .fontColor(COLOR_TEXT)
-            .enabled(!this.requestsLoading)
-            .onClick(() => {
-              this.runAsync(() => this.loadRequests())
-            })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
 
         this.RequestFormCard(
           '存储配额申请',
+          '输入希望提升到的目标配额，单位是 MB。',
           this.quotaRequestMbInput,
           '期望配额（MB）',
           (value: string) => { this.quotaRequestMbInput = value },
@@ -1508,20 +1794,22 @@ struct Index {
 
         this.RequestFormCard(
           '带宽申请',
+          '上传和下载都按 MB/s 填写，至少填一个高于当前值的目标更合理。',
           this.bandwidthUploadInput,
-          '期望上传带宽（Kbps）',
+          '期望上传带宽（MB/s）',
           (value: string) => { this.bandwidthUploadInput = value },
           this.bandwidthReason,
           '申请原因',
           (value: string) => { this.bandwidthReason = value },
           () => { this.runAsync(() => this.submitBandwidthRequest()) },
           this.bandwidthDownloadInput,
-          '期望下载带宽（Kbps）',
+          '期望下载带宽（MB/s）',
           (value: string) => { this.bandwidthDownloadInput = value },
         )
 
         this.RequestFormCard(
           '管理员申请',
+          '说明为什么需要管理员权限，以及主要会做哪些管理操作。',
           '',
           '',
           (_value: string) => {},
@@ -1546,7 +1834,7 @@ struct Index {
         }))
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1555,6 +1843,7 @@ struct Index {
   @Builder
   private RequestFormCard(
     title: string,
+    description: string,
     firstValue: string,
     firstPlaceholder: string,
     onFirstChange: (value: string) => void,
@@ -1569,9 +1858,12 @@ struct Index {
   ) {
     Column({ space: 10 }) {
       Text(title)
-        .fontSize(16)
+        .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .fontColor(COLOR_TEXT)
+      Text(description)
+        .fontSize(13)
+        .fontColor(COLOR_SUBTEXT)
       if (!hideFirstField) {
         this.InputFieldCompact(firstPlaceholder, firstValue, onFirstChange)
       }
@@ -1591,18 +1883,18 @@ struct Index {
         .onClick(onSubmit)
     }
     .width('100%')
-    .padding(16)
+    .padding(18)
     .backgroundColor(COLOR_CARD)
-    .borderRadius(10)
+    .borderRadius(PANEL_RADIUS)
     .borderWidth(1)
     .borderColor(COLOR_BORDER)
   }
 
   @Builder
   private RequestRecordSection(title: string, rows: string[]) {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Text(title)
-        .fontSize(16)
+        .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .fontColor(COLOR_TEXT)
       if (rows.length === 0) {
@@ -1614,9 +1906,9 @@ struct Index {
               .fontSize(13)
               .fontColor(COLOR_TEXT)
               .width('100%')
-              .padding(12)
+              .padding(14)
               .backgroundColor(COLOR_CARD)
-              .borderRadius(8)
+              .borderRadius(16)
               .borderWidth(1)
               .borderColor(COLOR_BORDER)
           })
@@ -1630,27 +1922,62 @@ struct Index {
   @Builder
   private AdminSettingsPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.adminSettingsError, COLOR_DANGER_SOFT, COLOR_DANGER)
 
         Column({ space: 10 }) {
+          Row({ space: 12 }) {
+            Column({ space: 4 }) {
+              Text('系统设置')
+                .fontSize(18)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(COLOR_TEXT)
+              Text('这里的默认值会影响新账号和系统限制，修改后会立即生效。')
+                .fontSize(13)
+                .fontColor(COLOR_SUBTEXT)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Button(this.adminSettingsLoading ? '刷新中...' : '刷新')
+              .backgroundColor(COLOR_PRIMARY_SOFT)
+              .fontColor(COLOR_PRIMARY)
+              .enabled(!this.adminSettingsLoading)
+              .onClick(() => {
+                this.runAsync(() => this.loadAdminSettings())
+              })
+          }
           this.KeyValueRow('当前用户数', `${this.adminCurrentUserCount}`)
+          this.KeyValueRow('上次更新时间', formatTime(this.adminSettings.updatedAt))
+        }
+        .width('100%')
+        .padding(18)
+        .backgroundColor(COLOR_CARD)
+        .borderRadius(PANEL_RADIUS)
+        .borderWidth(1)
+        .borderColor(COLOR_BORDER)
+
+        Column({ space: 10 }) {
+          Text('可编辑项')
+            .fontSize(18)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(COLOR_TEXT)
           this.InputFieldCompact('最大用户数', this.adminMaxUserCountInput, (value: string) => {
             this.adminMaxUserCountInput = value
           })
           this.InputFieldCompact('默认存储配额（MB）', this.adminDefaultQuotaMbInput, (value: string) => {
             this.adminDefaultQuotaMbInput = value
           })
-          this.InputFieldCompact('默认上传带宽（Kbps）', this.adminDefaultUploadInput, (value: string) => {
+          this.InputFieldCompact('默认上传带宽（MB/s）', this.adminDefaultUploadInput, (value: string) => {
             this.adminDefaultUploadInput = value
           })
-          this.InputFieldCompact('默认下载带宽（Kbps）', this.adminDefaultDownloadInput, (value: string) => {
+          this.InputFieldCompact('默认下载带宽（MB/s）', this.adminDefaultDownloadInput, (value: string) => {
             this.adminDefaultDownloadInput = value
           })
-          this.InputFieldCompact('用户上传带宽上限（Kbps）', this.adminMaxUserUploadInput, (value: string) => {
+          this.InputFieldCompact('用户上传带宽上限（MB/s）', this.adminMaxUserUploadInput, (value: string) => {
             this.adminMaxUserUploadInput = value
           })
-          this.InputFieldCompact('用户下载带宽上限（Kbps）', this.adminMaxUserDownloadInput, (value: string) => {
+          this.InputFieldCompact('用户下载带宽上限（MB/s）', this.adminMaxUserDownloadInput, (value: string) => {
             this.adminMaxUserDownloadInput = value
           })
           this.InputFieldCompact('单文件上传上限（MB）', this.adminMaxUploadFileMbInput, (value: string) => {
@@ -1677,14 +2004,14 @@ struct Index {
             })
         }
         .width('100%')
-        .padding(16)
+        .padding(18)
         .backgroundColor(COLOR_CARD)
-        .borderRadius(10)
+        .borderRadius(PANEL_RADIUS)
         .borderWidth(1)
         .borderColor(COLOR_BORDER)
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1693,36 +2020,63 @@ struct Index {
   @Builder
   private AdminUsersPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.adminUsersError, COLOR_DANGER_SOFT, COLOR_DANGER)
-        Button(this.adminUsersLoading ? '刷新中...' : '刷新用户列表')
-          .width('100%')
-          .backgroundColor(COLOR_CARD_MUTED)
-          .fontColor(COLOR_TEXT)
-          .enabled(!this.adminUsersLoading)
-          .onClick(() => {
-            this.runAsync(() => this.loadAdminUsers())
-          })
+
+        Column({ space: 10 }) {
+          Row({ space: 12 }) {
+            Column({ space: 4 }) {
+              Text('用户管理')
+                .fontSize(18)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(COLOR_TEXT)
+              Text('这里可以调整用户额度、带宽和管理员权限，也可以删除账号。')
+                .fontSize(13)
+                .fontColor(COLOR_SUBTEXT)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Button(this.adminUsersLoading ? '刷新中...' : '刷新')
+              .backgroundColor(COLOR_PRIMARY_SOFT)
+              .fontColor(COLOR_PRIMARY)
+              .enabled(!this.adminUsersLoading)
+              .onClick(() => {
+                this.runAsync(() => this.loadAdminUsers())
+              })
+          }
+        }
+        .width('100%')
+        .padding(18)
+        .backgroundColor(COLOR_CARD)
+        .borderRadius(PANEL_RADIUS)
+        .borderWidth(1)
+        .borderColor(COLOR_BORDER)
 
         if (this.adminUsers.length === 0 && !this.adminUsersLoading) {
           this.MessageCard('暂无用户数据', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
         } else {
-          Column({ space: 10 }) {
+          Column({ space: 12 }) {
             ForEach(this.adminUsers, (user: AdminUserRecord) => {
-              Column({ space: 8 }) {
+              Column({ space: 10 }) {
                 Text(user.username)
-                  .fontSize(16)
+                  .fontSize(18)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(COLOR_TEXT)
-                this.KeyValueRow('当前占用', `${formatBytes(user.storageUsedBytes)} / ${formatBytes(user.storageQuotaBytes)}`)
+                Text(user.isAdmin ? '管理员' : '普通用户')
+                  .fontSize(13)
+                  .fontColor(COLOR_SUBTEXT)
+                this.KeyValueRow('存储配额', formatBytes(user.storageQuotaBytes))
+                this.KeyValueRow('已用空间', formatBytes(user.storageUsedBytes))
+                this.KeyValueRow('剩余空间', formatBytes(user.storageFreeBytes))
                 this.KeyValueRow('待审批', this.pendingFlags(user))
                 this.InputFieldCompact('存储配额（MB）', this.adminUserDraft(user).storageQuotaMb, (value: string) => {
                   this.updateAdminUserStorageQuota(user, value)
                 })
-                this.InputFieldCompact('上传带宽（Kbps）', this.adminUserDraft(user).uploadBandwidthKbps, (value: string) => {
+                this.InputFieldCompact('上传带宽（MB/s）', this.adminUserDraft(user).uploadBandwidthKbps, (value: string) => {
                   this.updateAdminUserUploadBandwidth(user, value)
                 })
-                this.InputFieldCompact('下载带宽（Kbps）', this.adminUserDraft(user).downloadBandwidthKbps, (value: string) => {
+                this.InputFieldCompact('下载带宽（MB/s）', this.adminUserDraft(user).downloadBandwidthKbps, (value: string) => {
                   this.updateAdminUserDownloadBandwidth(user, value)
                 })
                 Row({ space: 8 }) {
@@ -1759,9 +2113,9 @@ struct Index {
                 }
               }
               .width('100%')
-              .padding(16)
+              .padding(18)
               .backgroundColor(COLOR_CARD)
-              .borderRadius(10)
+              .borderRadius(PANEL_RADIUS)
               .borderWidth(1)
               .borderColor(COLOR_BORDER)
             }, (user: AdminUserRecord) => user.id)
@@ -1770,7 +2124,7 @@ struct Index {
         }
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1779,23 +2133,45 @@ struct Index {
   @Builder
   private AdminReviewsPage() {
     Scroll() {
-      Column({ space: PAGE_SPACE }) {
+      Column({ space: CONTENT_SPACE }) {
         this.MessageCard(this.adminReviewsError, COLOR_DANGER_SOFT, COLOR_DANGER)
-        Button(this.adminReviewsLoading ? '刷新中...' : '刷新审批队列')
-          .width('100%')
-          .backgroundColor(COLOR_CARD_MUTED)
-          .fontColor(COLOR_TEXT)
-          .enabled(!this.adminReviewsLoading)
-          .onClick(() => {
-            this.runAsync(() => this.loadAdminReviews())
-          })
+
+        Column({ space: 10 }) {
+          Row({ space: 12 }) {
+            Column({ space: 4 }) {
+              Text('待审批队列')
+                .fontSize(18)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(COLOR_TEXT)
+              Text('这里只展示待处理申请，批准或拒绝后会自动从当前列表移除。')
+                .fontSize(13)
+                .fontColor(COLOR_SUBTEXT)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+
+            Button(this.adminReviewsLoading ? '刷新中...' : '刷新')
+              .backgroundColor(COLOR_PRIMARY_SOFT)
+              .fontColor(COLOR_PRIMARY)
+              .enabled(!this.adminReviewsLoading)
+              .onClick(() => {
+                this.runAsync(() => this.loadAdminReviews())
+              })
+          }
+        }
+        .width('100%')
+        .padding(18)
+        .backgroundColor(COLOR_CARD)
+        .borderRadius(PANEL_RADIUS)
+        .borderWidth(1)
+        .borderColor(COLOR_BORDER)
 
         this.QuotaReviewSection()
         this.BandwidthReviewSection()
         this.AdminReviewSection()
       }
       .width('100%')
-      .padding(PAGE_PADDING)
+      .padding(CONTENT_PADDING)
     }
     .width('100%')
     .layoutWeight(1)
@@ -1803,17 +2179,17 @@ struct Index {
 
   @Builder
   private QuotaReviewSection() {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Text('配额审批')
-        .fontSize(16)
+        .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .fontColor(COLOR_TEXT)
       if (this.pendingQuotaReviews.length === 0) {
         this.MessageCard('暂无待审批配额申请', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
       } else {
-        Column({ space: 10 }) {
+        Column({ space: 12 }) {
           ForEach(this.pendingQuotaReviews, (item: QuotaRequestRecord) => {
-            Column({ space: 8 }) {
+            Column({ space: 10 }) {
               Text(`${item.username} / 当前 ${formatBytes(item.currentQuotaBytes)} / 申请 ${formatBytes(item.requestedQuotaBytes)}`)
                 .fontSize(14)
                 .fontColor(COLOR_TEXT)
@@ -1841,15 +2217,15 @@ struct Index {
                   .onClick(() => {
                     this.runAsync(() => this.rejectQuotaRequest(item.id))
                   })
+                }
               }
-            }
-            .width('100%')
-            .padding(16)
-            .backgroundColor(COLOR_CARD)
-            .borderRadius(10)
-            .borderWidth(1)
-            .borderColor(COLOR_BORDER)
-          }, (item: QuotaRequestRecord) => item.id)
+              .width('100%')
+              .padding(18)
+              .backgroundColor(COLOR_CARD)
+              .borderRadius(PANEL_RADIUS)
+              .borderWidth(1)
+              .borderColor(COLOR_BORDER)
+            }, (item: QuotaRequestRecord) => item.id)
         }
         .width('100%')
       }
@@ -1859,27 +2235,27 @@ struct Index {
 
   @Builder
   private BandwidthReviewSection() {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Text('带宽审批')
-        .fontSize(16)
+        .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .fontColor(COLOR_TEXT)
       if (this.pendingBandwidthReviews.length === 0) {
         this.MessageCard('暂无待审批带宽申请', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
       } else {
-        Column({ space: 10 }) {
+        Column({ space: 12 }) {
           ForEach(this.pendingBandwidthReviews, (item: BandwidthRequestRecord) => {
-            Column({ space: 8 }) {
+            Column({ space: 10 }) {
               Text(`${item.username} / 上行 ${formatKbps(item.currentUploadKbps)} -> ${formatKbps(item.requestedUploadKbps)}`)
                 .fontSize(14)
                 .fontColor(COLOR_TEXT)
               Text(`下行 ${formatKbps(item.currentDownloadKbps)} -> ${formatKbps(item.requestedDownloadKbps)}`)
                 .fontSize(13)
                 .fontColor(COLOR_SUBTEXT)
-              this.InputFieldCompact('批准上传（Kbps）', this.bandwidthReviewDraft(item).approvedUploadKbps, (value: string) => {
+              this.InputFieldCompact('批准上传（MB/s）', this.bandwidthReviewDraft(item).approvedUploadKbps, (value: string) => {
                 this.updateBandwidthReviewApprovedUpload(item, value)
               })
-              this.InputFieldCompact('批准下载（Kbps）', this.bandwidthReviewDraft(item).approvedDownloadKbps, (value: string) => {
+              this.InputFieldCompact('批准下载（MB/s）', this.bandwidthReviewDraft(item).approvedDownloadKbps, (value: string) => {
                 this.updateBandwidthReviewApprovedDownload(item, value)
               })
               this.InputFieldCompact('审核备注', this.bandwidthReviewDraft(item).reviewNote, (value: string) => {
@@ -1900,15 +2276,15 @@ struct Index {
                   .onClick(() => {
                     this.runAsync(() => this.rejectBandwidthRequest(item.id))
                   })
+                }
               }
-            }
-            .width('100%')
-            .padding(16)
-            .backgroundColor(COLOR_CARD)
-            .borderRadius(10)
-            .borderWidth(1)
-            .borderColor(COLOR_BORDER)
-          }, (item: BandwidthRequestRecord) => item.id)
+              .width('100%')
+              .padding(18)
+              .backgroundColor(COLOR_CARD)
+              .borderRadius(PANEL_RADIUS)
+              .borderWidth(1)
+              .borderColor(COLOR_BORDER)
+            }, (item: BandwidthRequestRecord) => item.id)
         }
         .width('100%')
       }
@@ -1918,17 +2294,17 @@ struct Index {
 
   @Builder
   private AdminReviewSection() {
-    Column({ space: 8 }) {
+    Column({ space: 10 }) {
       Text('管理员审批')
-        .fontSize(16)
+        .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .fontColor(COLOR_TEXT)
       if (this.pendingAdminReviews.length === 0) {
         this.MessageCard('暂无待审批管理员申请', COLOR_PRIMARY_SOFT, COLOR_PRIMARY)
       } else {
-        Column({ space: 10 }) {
+        Column({ space: 12 }) {
           ForEach(this.pendingAdminReviews, (item: AdminRequestRecord) => {
-            Column({ space: 8 }) {
+            Column({ space: 10 }) {
               Text(item.username)
                 .fontSize(14)
                 .fontWeight(FontWeight.Medium)
@@ -1954,15 +2330,15 @@ struct Index {
                   .onClick(() => {
                     this.runAsync(() => this.rejectAdminRequest(item.id))
                   })
+                }
               }
-            }
-            .width('100%')
-            .padding(16)
-            .backgroundColor(COLOR_CARD)
-            .borderRadius(10)
-            .borderWidth(1)
-            .borderColor(COLOR_BORDER)
-          }, (item: AdminRequestRecord) => item.id)
+              .width('100%')
+              .padding(18)
+              .backgroundColor(COLOR_CARD)
+              .borderRadius(PANEL_RADIUS)
+              .borderWidth(1)
+              .borderColor(COLOR_BORDER)
+            }, (item: AdminRequestRecord) => item.id)
         }
         .width('100%')
       }
@@ -1978,9 +2354,9 @@ struct Index {
         .fontColor(COLOR_TEXT)
       TextInput({ text: value, placeholder })
         .width('100%')
-        .height(42)
+        .height(46)
         .backgroundColor(COLOR_CARD_MUTED)
-        .borderRadius(8)
+        .borderRadius(14)
         .onChange(onChange)
     }
     .width('100%')
@@ -1990,9 +2366,9 @@ struct Index {
   private InputFieldCompact(placeholder: string, value: string, onChange: (value: string) => void) {
     TextInput({ text: value, placeholder })
       .width('100%')
-      .height(40)
+      .height(44)
       .backgroundColor(COLOR_CARD_MUTED)
-      .borderRadius(8)
+      .borderRadius(14)
       .onChange(onChange)
   }
 
@@ -2005,9 +2381,9 @@ struct Index {
       TextInput({ text: value, placeholder })
         .type(InputType.Password)
         .width('100%')
-        .height(42)
+        .height(46)
         .backgroundColor(COLOR_CARD_MUTED)
-        .borderRadius(8)
+        .borderRadius(14)
         .onChange(onChange)
     }
     .width('100%')
@@ -2018,25 +2394,25 @@ struct Index {
     if (message.trim().length > 0) {
       Text(message)
         .width('100%')
-        .padding(12)
+        .padding(14)
         .fontSize(13)
         .fontColor(textColor)
         .backgroundColor(backgroundColor)
-        .borderRadius(8)
+        .borderRadius(16)
     }
   }
 
   @Builder
   private KeyValueRow(label: string, value: string) {
-    Row({ space: 8 }) {
+    Row({ space: 12 }) {
       Text(label)
-        .layoutWeight(1)
+        .width(96)
         .fontSize(14)
         .fontColor(COLOR_SUBTEXT)
       Text(value.length > 0 ? value : '-')
+        .layoutWeight(1)
         .fontSize(14)
         .fontColor(COLOR_TEXT)
-        .textAlign(TextAlign.End)
     }
     .width('100%')
   }
@@ -2078,9 +2454,11 @@ struct Index {
       this.applyProfile(profile)
       this.loggedIn = true
       this.bootLoading = false
+      this.refreshClipboardObserver()
       await this.loadHistory(true)
     } catch (error) {
       await this.handleProtectedError(error, '登录态已失效，请重新登录')
+      this.refreshClipboardObserver()
       this.bootLoading = false
     }
   }
@@ -2098,6 +2476,7 @@ struct Index {
         this.applyTokens(tokens)
       },
     )
+    this.clipboardSyncRuntime = new ClipboardSyncRuntime(context)
     this.fileTransfer = new FileTransfer(() => context, this.apiClient)
     this.initialized = true
   }
@@ -2108,6 +2487,14 @@ struct Index {
       throw new ApiError('API 客户端尚未初始化')
     }
     return this.apiClient
+  }
+
+  private requiredClipboardSyncRuntime(): ClipboardSyncRuntime {
+    this.ensureServices()
+    if (!this.clipboardSyncRuntime) {
+      throw new ApiError('同步运行时尚未初始化')
+    }
+    return this.clipboardSyncRuntime
   }
 
   private runAsync(task: () => Promise<void>): void {
@@ -2168,9 +2555,10 @@ struct Index {
     this.loggedIn = true
     this.authPassword = ''
     this.authMessage = ''
-    this.activeTab = MainTab.Home
+    this.setActiveTab(MainTab.Home)
     this.detailPage = DetailPage.None
     this.resetProtectedData(false)
+    this.refreshClipboardObserver()
     await this.loadHistory(true)
     this.showToast('登录成功')
   }
@@ -2683,8 +3071,8 @@ struct Index {
   private async submitBandwidthRequest(): Promise<void> {
     try {
       await this.requiredApi().createBandwidthRequest(
-        positiveOrFallback(this.bandwidthUploadInput, 0),
-        positiveOrFallback(this.bandwidthDownloadInput, 0),
+        bandwidthMbToKbps(this.bandwidthUploadInput, 0),
+        bandwidthMbToKbps(this.bandwidthDownloadInput, 0),
         this.bandwidthReason.trim(),
       )
       this.bandwidthUploadInput = ''
@@ -2723,10 +3111,10 @@ struct Index {
       this.adminCurrentUserCount = result.currentUserCount
       this.adminMaxUserCountInput = `${result.settings.maxUserCount}`
       this.adminDefaultQuotaMbInput = `${bytesToMb(result.settings.defaultStorageQuotaBytes)}`
-      this.adminDefaultUploadInput = `${result.settings.defaultUploadBandwidthKbps}`
-      this.adminDefaultDownloadInput = `${result.settings.defaultDownloadBandwidthKbps}`
-      this.adminMaxUserUploadInput = `${result.settings.maxUserUploadBandwidthKbps}`
-      this.adminMaxUserDownloadInput = `${result.settings.maxUserDownloadBandwidthKbps}`
+      this.adminDefaultUploadInput = bandwidthKbpsToMbInput(result.settings.defaultUploadBandwidthKbps)
+      this.adminDefaultDownloadInput = bandwidthKbpsToMbInput(result.settings.defaultDownloadBandwidthKbps)
+      this.adminMaxUserUploadInput = bandwidthKbpsToMbInput(result.settings.maxUserUploadBandwidthKbps)
+      this.adminMaxUserDownloadInput = bandwidthKbpsToMbInput(result.settings.maxUserDownloadBandwidthKbps)
       this.adminMaxUploadFileMbInput = `${bytesToMb(result.settings.maxUploadFileBytes)}`
       this.adminAllowRegistration = result.settings.allowRegistration
     } catch (error) {
@@ -2745,10 +3133,10 @@ struct Index {
       const result = await this.requiredApi().updateAdminSettings({
         maxUserCount: positiveOrFallback(this.adminMaxUserCountInput, 0),
         defaultStorageQuotaMb: positiveOrFallback(this.adminDefaultQuotaMbInput, 0),
-        defaultUploadBandwidthKbps: positiveOrFallback(this.adminDefaultUploadInput, 0),
-        defaultDownloadBandwidthKbps: positiveOrFallback(this.adminDefaultDownloadInput, 0),
-        maxUserUploadBandwidthKbps: positiveOrFallback(this.adminMaxUserUploadInput, 0),
-        maxUserDownloadBandwidthKbps: positiveOrFallback(this.adminMaxUserDownloadInput, 0),
+        defaultUploadBandwidthKbps: bandwidthMbToKbps(this.adminDefaultUploadInput, 0),
+        defaultDownloadBandwidthKbps: bandwidthMbToKbps(this.adminDefaultDownloadInput, 0),
+        maxUserUploadBandwidthKbps: bandwidthMbToKbps(this.adminMaxUserUploadInput, 0),
+        maxUserDownloadBandwidthKbps: bandwidthMbToKbps(this.adminMaxUserDownloadInput, 0),
         maxUploadFileMb: positiveOrFallback(this.adminMaxUploadFileMbInput, 0),
         allowRegistration: this.adminAllowRegistration,
       })
@@ -2780,8 +3168,8 @@ struct Index {
         const user = users[index]
         drafts[user.id] = {
           storageQuotaMb: `${bytesToMb(user.storageQuotaBytes)}`,
-          uploadBandwidthKbps: `${user.uploadBandwidthKbps}`,
-          downloadBandwidthKbps: `${user.downloadBandwidthKbps}`,
+          uploadBandwidthKbps: bandwidthKbpsToMbInput(user.uploadBandwidthKbps),
+          downloadBandwidthKbps: bandwidthKbpsToMbInput(user.downloadBandwidthKbps),
           isAdmin: user.isAdmin,
         }
       }
@@ -2801,8 +3189,8 @@ struct Index {
       const draft = this.adminUserDrafts[userId]
       await this.requiredApi().updateAdminUser(userId, {
         storageQuotaMb: positiveOrFallback(draft.storageQuotaMb, 0),
-        uploadBandwidthKbps: positiveOrFallback(draft.uploadBandwidthKbps, 0),
-        downloadBandwidthKbps: positiveOrFallback(draft.downloadBandwidthKbps, 0),
+        uploadBandwidthKbps: bandwidthMbToKbps(draft.uploadBandwidthKbps, 0),
+        downloadBandwidthKbps: bandwidthMbToKbps(draft.downloadBandwidthKbps, 0),
         isAdmin: draft.isAdmin,
       })
       await this.loadAdminUsers()
@@ -2850,8 +3238,8 @@ struct Index {
       for (let index = 0; index < this.pendingBandwidthReviews.length; index += 1) {
         const item = this.pendingBandwidthReviews[index]
         bandwidthDrafts[item.id] = {
-          approvedUploadKbps: `${item.requestedUploadKbps}`,
-          approvedDownloadKbps: `${item.requestedDownloadKbps}`,
+          approvedUploadKbps: bandwidthKbpsToMbInput(item.requestedUploadKbps),
+          approvedDownloadKbps: bandwidthKbpsToMbInput(item.requestedDownloadKbps),
           reviewNote: '',
         }
       }
@@ -2909,8 +3297,8 @@ struct Index {
       const draft = this.bandwidthReviewDrafts[requestId]
       await this.requiredApi().approveBandwidthRequest(
         requestId,
-        positiveOrFallback(draft.approvedUploadKbps, 0),
-        positiveOrFallback(draft.approvedDownloadKbps, 0),
+        bandwidthMbToKbps(draft.approvedUploadKbps, 0),
+        bandwidthMbToKbps(draft.approvedDownloadKbps, 0),
         draft.reviewNote.trim(),
       )
       await this.loadAdminReviews()
@@ -3026,8 +3414,9 @@ struct Index {
     this.loggedIn = false
     this.authMessage = message
     this.detailPage = DetailPage.None
-    this.activeTab = MainTab.Home
+    this.setActiveTab(MainTab.Home)
     this.resetProtectedData(true)
+    this.refreshClipboardObserver()
     if (!clearOnly) {
       this.showToast(message)
     }
@@ -3102,6 +3491,24 @@ struct Index {
     promptAction.showToast({ message })
   }
 
+  private async toggleHomeSyncEnabled(): Promise<void> {
+    if (!this.syncEnabled) {
+      // 中文注释：同步一旦开启，前台自动上传和退后台补传都会读系统剪贴板，
+      // 所以这里先把权限申请补齐，避免用户开启后才发现后台链路根本读不到内容。
+      const granted = await this.ensurePasteboardReadPermission()
+      if (!granted) {
+        return
+      }
+    }
+
+    const nextValue = !this.syncEnabled
+
+    // 中文注释：首页大图标除了切换视觉状态，还会控制自动上传和退后台补传能力是否可用。
+    this.syncEnabled = nextValue
+    this.sessionStore?.saveSyncEnabled(nextValue)
+    this.refreshClipboardObserver()
+  }
+
   private async ensurePasteboardReadPermission(): Promise<boolean> {
     // 读取系统剪贴板前先主动申请权限，避免用户点了“上传剪贴板”却没有任何结果。
     const context = getContext(this) as common.UIAbilityContext
@@ -3133,6 +3540,9 @@ struct Index {
   private async copyText(text: string, message: string): Promise<void> {
     const systemPasteboard = pasteboard.getSystemPasteboard()
     const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text)
+    // 中文注释：应用自己往系统剪贴板写内容时，不要再触发一次自动上传，
+    // 否则“补拉写回”或“历史页复制”都会被当成新的本地复制。
+    this.ignoreNextClipboardUpdate = true
     await systemPasteboard.setData(data)
     this.showToast(message)
   }
@@ -3166,10 +3576,115 @@ struct Index {
   }
 
   private selectTab(tab: MainTab): void {
-    this.activeTab = tab
+    this.setActiveTab(tab)
     this.detailPage = DetailPage.None
-    if (tab === MainTab.History && this.historyItems.length === 0) {
+    if (this.activeTab === MainTab.History && this.historyItems.length === 0) {
       this.runAsync(() => this.loadHistory(true))
+    }
+  }
+
+  private setActiveTab(tab: MainTab): void {
+    // 中文注释：这里同时维护“业务 tab 枚举”和“底栏选中索引”，
+    // 避免 ArkUI 在自定义底栏里出现枚举状态更新了、视觉高亮却没刷新的情况。
+    const resolvedTab = tab === MainTab.Ai ? MainTab.Home : tab
+    this.activeTab = resolvedTab
+    this.activeTabIndex = this.resolveTabIndex(resolvedTab)
+  }
+
+  private resolveTabIndex(tab: MainTab): number {
+    switch (tab) {
+      case MainTab.History:
+        return 1
+      case MainTab.Settings:
+        return 2
+      case MainTab.Home:
+      case MainTab.Ai:
+      default:
+        return 0
+    }
+  }
+
+  private refreshClipboardObserver(): void {
+    if (this.loggedIn && this.syncEnabled) {
+      this.registerClipboardObserver()
+      return
+    }
+
+    this.unregisterClipboardObserver()
+    this.lastAutoUploadedClipboardText = ''
+    this.ignoreNextClipboardUpdate = false
+  }
+
+  private registerClipboardObserver(): void {
+    if (this.clipboardObserverRegistered) {
+      return
+    }
+
+    const systemPasteboard = pasteboard.getSystemPasteboard()
+    this.clipboardUpdateListener = () => {
+      this.runAsync(() => this.handleClipboardUpdated())
+    }
+    systemPasteboard.on('update', this.clipboardUpdateListener)
+    this.clipboardObserverRegistered = true
+  }
+
+  private unregisterClipboardObserver(): void {
+    if (!this.clipboardObserverRegistered || !this.clipboardUpdateListener) {
+      return
+    }
+
+    const systemPasteboard = pasteboard.getSystemPasteboard()
+    systemPasteboard.off('update', this.clipboardUpdateListener)
+    this.clipboardUpdateListener = undefined
+    this.clipboardObserverRegistered = false
+  }
+
+  private async handleClipboardUpdated(): Promise<void> {
+    if (!this.loggedIn || !this.syncEnabled || this.clipboardAutoSyncRunning) {
+      return
+    }
+    if (this.ignoreNextClipboardUpdate) {
+      this.ignoreNextClipboardUpdate = false
+      return
+    }
+
+    const text = await this.readClipboardTextSilently()
+    if (text.length === 0 || text === this.lastAutoUploadedClipboardText) {
+      return
+    }
+
+    this.clipboardAutoSyncRunning = true
+    try {
+      // 中文注释：前台自动同步只负责“复制后自动上传”，
+      // 这是普通应用在鸿蒙端不依赖受限后台权限时，最接近 Android 的稳定方案。
+      const result = await this.requiredClipboardSyncRuntime().uploadClipboardIfNeeded()
+      if (!result.uploaded) {
+        return
+      }
+
+      this.lastAutoUploadedClipboardText = text
+      this.historyAckSeq = Math.max(this.historyAckSeq, result.latestAckSeq)
+      if (this.activeTabIndex === 1 && this.detailPage === DetailPage.None) {
+        await this.loadHistory(true)
+      }
+    } catch (error) {
+      await this.handleProtectedError(error, '登录态已失效，请重新登录')
+    } finally {
+      this.clipboardAutoSyncRunning = false
+    }
+  }
+
+  private async readClipboardTextSilently(): Promise<string> {
+    try {
+      const systemPasteboard = pasteboard.getSystemPasteboard()
+      if (!systemPasteboard.hasDataSync()) {
+        return ''
+      }
+      const data = await systemPasteboard.getData()
+      const text = data.getPrimaryText()
+      return typeof text === 'string' ? text.trim() : ''
+    } catch (_) {
+      return ''
     }
   }
 
@@ -3201,14 +3716,12 @@ struct Index {
         break
     }
 
-    switch (this.activeTab) {
-      case MainTab.Home:
+    switch (this.activeTabIndex) {
+      case 0:
         return '首页'
-      case MainTab.History:
+      case 1:
         return '历史'
-      case MainTab.Ai:
-        return 'AI'
-      case MainTab.Settings:
+      case 2:
         return '设置'
       default:
         return 'ClipBridge'
@@ -3223,6 +3736,34 @@ struct Index {
     return this.historyItems.filter((item: ClipboardItem) => {
       return item.textContent.toLowerCase().indexOf(keyword) >= 0
     })
+  }
+
+  private filteredFiles(): FileRecord[] {
+    const keyword = this.filesSearchQuery.trim().toLowerCase()
+    if (keyword.length === 0) {
+      return this.files
+    }
+
+    return this.files.filter((file: FileRecord) => {
+      return file.originalName.toLowerCase().indexOf(keyword) >= 0 ||
+        file.contentType.toLowerCase().indexOf(keyword) >= 0 ||
+        file.originDeviceName.toLowerCase().indexOf(keyword) >= 0
+    })
+  }
+
+  private onlineDeviceCount(): number {
+    return this.devices.filter((device: DeviceRecord) => device.isActive).length
+  }
+
+  private latestDeviceSeenText(): string {
+    if (this.devices.length === 0) {
+      return '-'
+    }
+
+    const sortedDevices = this.devices.slice().sort((left: DeviceRecord, right: DeviceRecord) => {
+      return right.lastSeenAt.localeCompare(left.lastSeenAt)
+    })
+    return formatTime(sortedDevices[0].lastSeenAt)
   }
 
   private resolveShareLink(share: ShareRecord): string {
@@ -3364,8 +3905,8 @@ struct Index {
   private adminUserDraft(user: AdminUserRecord): AdminUserDraft {
     return this.adminUserDrafts[user.id] ?? {
       storageQuotaMb: `${bytesToMb(user.storageQuotaBytes)}`,
-      uploadBandwidthKbps: `${user.uploadBandwidthKbps}`,
-      downloadBandwidthKbps: `${user.downloadBandwidthKbps}`,
+      uploadBandwidthKbps: bandwidthKbpsToMbInput(user.uploadBandwidthKbps),
+      downloadBandwidthKbps: bandwidthKbpsToMbInput(user.downloadBandwidthKbps),
       isAdmin: user.isAdmin,
     }
   }
@@ -3419,8 +3960,8 @@ struct Index {
 
   private bandwidthReviewDraft(item: BandwidthRequestRecord): BandwidthReviewDraft {
     return this.bandwidthReviewDrafts[item.id] ?? {
-      approvedUploadKbps: `${item.requestedUploadKbps}`,
-      approvedDownloadKbps: `${item.requestedDownloadKbps}`,
+      approvedUploadKbps: bandwidthKbpsToMbInput(item.requestedUploadKbps),
+      approvedDownloadKbps: bandwidthKbpsToMbInput(item.requestedDownloadKbps),
       reviewNote: '',
     }
   }
@@ -3512,6 +4053,29 @@ function positiveOrFallback(value: string, fallback: number): number {
 
 function positiveOrZero(value: string): number {
   return positiveOrFallback(value, 0)
+}
+
+function bandwidthKbpsToMbInput(value: number): string {
+  if (value <= 0) {
+    return ''
+  }
+
+  return trimTrailingZeros((value / 1024).toFixed(3))
+}
+
+function bandwidthMbToKbps(value: string, fallback: number): number {
+  const parsed = Number(value.trim())
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback
+  }
+
+  // 中文注释：接口字段仍然沿用旧的 kbps 命名，但服务端历史上实际按 KB/s 处理。
+  // 这里统一把界面输入的 MB/s 换算回旧字段，避免额外改动接口层。
+  return Math.max(1, Math.round(parsed * 1024))
+}
+
+function trimTrailingZeros(value: string): string {
+  return value.replace(/\.?0+$/, '')
 }
 
 function bytesToMb(value: number): number {

@@ -23,10 +23,8 @@ export function formatKbps(value: number): string {
   if (value <= 0) {
     return '-'
   }
-  if (value < 1024) {
-    return `${value} Kbps`
-  }
-  return `${(value / 1024).toFixed(1)} Mbps`
+
+  return `${trimTrailingZeros((value / 1024).toFixed(3))} MB/s`
 }
 
 export function formatTime(value: string): string {
@@ -95,4 +93,8 @@ export function publicShareLink(baseUrl: string, token: string): string {
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : `${value}`
+}
+
+function trimTrailingZeros(value: string): string {
+  return value.replace(/\.?0+$/, '')
 }
